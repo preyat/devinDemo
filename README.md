@@ -52,7 +52,7 @@ npm run dev          # http://localhost:3000/kyc
 ```
 
 Pick a role in the navbar. **Quick demo (Fraud Operations → Refunds):** as Payments Operator, Alex's refund
-`ref_alex_350` is eligible. As Risk Admin, click **Escalate & Hold** on alert `alert_alex_4500`. Back as Payments
+`ref_alex_350` is eligible. As Risk Admin, enter a note and click **Escalate & Hold** on alert `alert_alex_4500`. Back as Payments
 Operator, the server now blocks the refund with `ACCOUNT_RISK_HOLD`. `npm run demo:reset` restores the initial state.
 
 Full step-by-step walkthroughs, the seed scenarios and the reset guard are in [docs/demo.md](docs/demo.md).

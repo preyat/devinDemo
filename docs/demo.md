@@ -14,14 +14,15 @@ then switch roles with the navbar selector.
 1. **Payments Operator** → open `/refunds/ref_alex_350` (Alex Kim, $350, pending). The eligibility checklist passes
    and there is no hold banner. Don't process it yet.
 2. **Risk Admin** → open `/fraud`, then click the HIGH alert `alert_alex_4500` (Alex Kim, $4,500 wire). The signals
-   are *New device* and *Unusual location*, and the hold status is "No active account risk hold".
+   are *New device*, *Unusual location* and *High-value outbound wire*, and the hold status is "No active account risk hold".
 3. Enter a note (e.g. "Customer confirmed they did not send the wire.") and click **Escalate & Hold**. You should see
    a success message naming hold `hold_alex_4500`. The hold status becomes *Active hold*, and the alert is now read-only.
 4. **Payments Operator** → open `/refunds`. Alex's row now shows `ACCOUNT_RISK_HOLD`. Open `/refunds/ref_alex_350`:
    it shows the banner "Account under risk review — refund processing paused."
-5. Enter a note and click **Process refund**. The server rejects it with the same message. Reload the page: the refund
+5. Enter a note and click **Process refund**. The server rejects it with `ACCOUNT_RISK_HOLD` and the same message, naming
+   the hold and alert. Reload the page: the refund
    is still *Pending*, and the denied attempt is recorded in the audit trail.
-6. Optional contrast: as Risk Admin, **Dismiss alert** on `alert_sam_device`. No hold is created, so refunds are unaffected.
+6. Optional contrast: as Risk Admin, enter a note and click **Dismiss alert** on `alert_sam_device`. No hold is created, so refunds are unaffected.
 7. Run `npm run demo:reset` to start over. `alert_priya_2750` shows the end state from step 4 already seeded.
 
 The same flow is automated in `npm run smoke` (the "Fraud Operations" checks).
@@ -31,8 +32,9 @@ The same flow is automated in `npm run smoke` (the "Fraud Operations" checks).
 1. **Risk Admin** → `/feature-flags`: turn `block_refunds_unverified_kyc` ON (reason required).
 2. **Payments Operator** → `/refunds/ref_maya_750`: blocked with `KYC_NOT_APPROVED` (Maya's KYC is still pending).
 3. **KYC Reviewer** → `/kyc/cus_maya_reed`: enter a note and **Approve** (all checks pass).
-4. **Payments Operator** → `/refunds/ref_maya_750`: **Process refund** succeeds. A second attempt is rejected with
-   `ALREADY_REFUNDED`.
+4. **Payments Operator** → `/refunds/ref_maya_750`: enter a note and click **Process refund**. It succeeds and the
+   page becomes read-only. A stale second submit (e.g. from a second tab opened before processing) is rejected by the
+   server with `ALREADY_REFUNDED`; `npm run smoke` covers this.
 
 Jordan's `ref_jordan_420` is already processed and read-only.
 
@@ -51,10 +53,10 @@ transaction/refund history). Demo scenarios:
 | Samira Patel   | pending  | medium | Periodic refresh | Reported address change; proof of address missing → approval blocked; request info |
 | Viktor Sokolov | pending  | high   | Onboarding       | Potential sanctions match → approval blocked |
 | Lucas Moreau   | pending  | medium | Periodic refresh | Passport on file expired → approval blocked |
-| Jordan Lee     | approved | low    | —                | $420 refund already processed |
-| Alex Kim       | approved | low    | —                | $350 refund pending + separate $4,500 transaction; HIGH open fraud alert; no risk hold |
-| Ben Carter     | approved | low    | —                | $180 refund processed, then customer re-submitted → pending `ref_ben_180_dup` is blocked `DUPLICATE_REFUND` |
-| David Cohen    | approved | medium | —                | $2,400 pending refund → blocked `AMOUNT_OVER_LIMIT` while `block_high_value_refunds` is ON |
+| Jordan Lee     | approved | low    | Onboarding       | $420 refund already processed |
+| Alex Kim       | approved | low    | Onboarding       | $350 refund pending + separate $4,500 transaction; HIGH open fraud alert; no risk hold |
+| Ben Carter     | approved | low    | Onboarding       | $180 refund processed, then customer re-submitted → pending `ref_ben_180_dup` is blocked `DUPLICATE_REFUND` |
+| David Cohen    | approved | medium | Onboarding       | $2,400 pending refund → blocked `AMOUNT_OVER_LIMIT` while `block_high_value_refunds` is ON |
 
 Fraud Operations cases (all signals simulated; `src/server/fraud/seed-data.ts`):
 
