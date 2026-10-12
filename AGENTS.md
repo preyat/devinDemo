@@ -23,6 +23,9 @@ CI (`.github/workflows/ci.yml`) runs `npm ci`, typecheck, lint, test and `db:res
 - `playbooks/build-internal-tool.devin.md` — short, general task template; source for the Devin playbook
   `!build-internal-tool` (registered manually in the Devin UI — editing the file does not update the registered copy).
   It requires invoking the repo skill `build-internal-tool`.
+- `playbooks/fix-internal-tool.devin.md` — bug-fix/maintenance counterpart; source for the Devin playbook
+  `!fix-internal-tool` (registered manually in the Devin UI — editing the file does not update the registered copy).
+  It requires invoking the repo skill `fix-internal-tool`.
 - `docs/playbooks/ops-portal-tool.md` — detailed repo procedure (source for `!ops_portal_tool`; keep both in sync).
 
 ## Skills (in `.agents/skills/`, auto-discovered — use them)
@@ -31,6 +34,7 @@ CI (`.github/workflows/ci.yml`) runs `npm ci`, typecheck, lint, test and `db:res
 | ----- | ---- |
 | `plan-internal-tool` | Start of a new workflow: write the one-page spec. |
 | `build-internal-tool` | Implement a workflow end-to-end (scaffold → rules → tests → UI → verify → PR). |
+| `fix-internal-tool` | Fix a bug / maintain an existing workflow (baseline → failing test → fix in service → verify → PR). |
 | `add-seed-data` | Any schema or seed change; preserves demo scenarios + realism invariants. |
 | `browser-check` | Run/extend `npm run smoke`. |
 | `review-internal-tool` | Pre-PR checklist + architecture greps. |
