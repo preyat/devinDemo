@@ -11,7 +11,24 @@ npm run dev         # next dev on http://localhost:3000
 npm run typecheck   # tsc --noEmit
 npm run lint        # eslint . (flat config, next/core-web-vitals + next/typescript)
 npm test            # vitest run — tests/**/*.test.ts, in-memory SQLite
+npm run smoke       # browser smoke test against a running `npm run dev` (resets DB before/after)
+                    # on the Devin VM: SMOKE_CDP_URL=http://localhost:29229 npm run smoke
+npm run new:workflow -- <slug> [--entity <type>] [--role <role>]   # scaffold a workflow on the shared architecture
 ```
+
+CI (`.github/workflows/ci.yml`) runs `npm ci`, typecheck, lint, test and `db:reset` on every PR.
+
+## Skills (in `.agents/skills/`, auto-discovered — use them)
+
+| Skill | When |
+| ----- | ---- |
+| `plan-internal-tool` | Start of a new workflow: write the one-page spec. |
+| `build-internal-tool` | Implement a workflow end-to-end (scaffold → rules → tests → UI → verify → PR). |
+| `add-seed-data` | Any schema or seed change; preserves demo scenarios + realism invariants. |
+| `browser-check` | Run/extend `npm run smoke`. |
+| `review-internal-tool` | Pre-PR checklist + architecture greps. |
+| `update-docs` | Keep README / AGENTS.md / architecture accurate. |
+| `capture-session-learnings` | End of session: fold decisions, corrections and gotchas into docs/skills. |
 
 Run `typecheck`, `lint` and `test` before every commit. Node 24 via nvm on the dev VM (`source ~/.nvm/nvm.sh`).
 
@@ -63,6 +80,8 @@ Dashio-derived theme (Inter font, sidebar layout, light/dark) · lucide-react ·
 | `src/server/kyc/service.ts` | KYC rules: `decideKyc`, `KYC_TRANSITIONS`, `allowedKycDecisions`, `getApprovalBlockers`, `formatApprovalBlockers`. |
 | `src/server/kyc/eligibility.ts` | `isKycRestricted(db, customerId)` — shared gate for other workflows (e.g. Refunds). |
 | `scripts/db-reset.ts` | CLI for `npm run db:reset`. |
+| `scripts/smoke.mjs` | Playwright (playwright-core) browser smoke checks; extend per workflow. |
+| `scripts/new-workflow.ts` | Scaffold generator for `npm run new:workflow`. |
 | `tests/helpers.ts` | `createTestDb()` — fresh seeded `:memory:` DB. |
 | `tests/kyc.test.ts`, `tests/seed.test.ts`, `tests/eligibility.test.ts` | Service, seed consistency/determinism, KYC gate tests. |
 

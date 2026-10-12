@@ -17,7 +17,8 @@ Docs must describe what the code does **now**. Verify against files, not memory.
    - "Adding another workflow" steps still match the real files.
 4. **README.md** — keep it short: what it does, run steps, seed table, list of shipped workflows
    (move items out of "Planned" when they ship). Every command must work as written.
-5. **Skills** — if the workflow procedure changed, update `.agents/skills/build-internal-tool/SKILL.md`.
+5. **Skills** — if a procedure changed, update the matching skill in `.agents/skills/` and the skills table in AGENTS.md.
+   For session-level context (decisions, corrections, gotchas) use `.agents/skills/capture-session-learnings/SKILL.md`.
 6. Check every referenced path exists (templated `<workflow>` paths are skipped):
    `grep -rhoE "(src|tests|scripts|docs|\.agents)/[A-Za-z0-9/._-]*\.(ts|tsx|md)" AGENTS.md README.md docs .agents | sort -u | xargs ls > /dev/null`
    Then run `npm run typecheck && npm run lint && npm test`.

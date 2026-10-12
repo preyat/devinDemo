@@ -29,7 +29,11 @@ npm run dev        # http://localhost:3000/kyc
 npm run typecheck  # tsc --noEmit
 npm run lint       # eslint .
 npm test           # vitest run (in-memory SQLite, no watch)
+npm run smoke      # browser smoke test (needs `npm run dev` running and Chrome)
+npm run new:workflow -- refunds --entity refund --role payments_operator   # scaffold a new tool
 ```
+
+Building a new tool? Start with [AGENTS.md](AGENTS.md) and the skills in `.agents/skills/`.
 
 ## Seed data
 
