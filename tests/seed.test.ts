@@ -26,11 +26,11 @@ describe("seed data", () => {
     other.close();
   });
 
-  it("seeds ~50 customers with the requested status mix", () => {
+  it("seeds 50 KYC customers plus 4 Fraud Operations customers with the requested status mix", () => {
     const counts = Object.fromEntries(
       (db.prepare("SELECT kyc_status AS s, COUNT(*) AS c FROM customers GROUP BY kyc_status").all() as { s: string; c: number }[]).map((r) => [r.s, r.c]),
     );
-    expect(counts).toEqual({ approved: 20, pending: 15, info_requested: 10, rejected: 5 });
+    expect(counts).toEqual({ approved: 24, pending: 15, info_requested: 10, rejected: 5 });
   });
 
   it("keeps data consistent: approved customers passed all checks; history matches the current status", () => {
@@ -136,9 +136,11 @@ describe("seed data", () => {
     expect(mismatched).toEqual([]);
   });
 
-  it("starts with KYC restriction OFF, no risk holds and an empty audit log", () => {
+  it("starts with KYC restriction OFF; only Priya Shah's seeded escalation is held and audited", () => {
     expect(getFeatureFlag(db, BLOCK_REFUNDS_UNVERIFIED_KYC)?.enabled).toBe(false);
-    expect(db.prepare("SELECT COUNT(*) AS c FROM risk_holds").get()).toEqual({ c: 0 });
-    expect(db.prepare("SELECT COUNT(*) AS c FROM audit_events").get()).toEqual({ c: 0 });
+    expect(db.prepare("SELECT id, customer_id AS c, status FROM risk_holds").all()).toEqual([{ id: "hold_priya_2750", c: SEED_IDS.priyaShah, status: "active" }]);
+    expect(db.prepare("SELECT action, entity_id AS e, outcome, actor_role AS r FROM audit_events").all()).toEqual([
+      { action: "fraud_alert.escalate", e: "alert_priya_2750", outcome: "success", r: "risk_admin" },
+    ]);
   });
 });

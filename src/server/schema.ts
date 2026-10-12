@@ -1,14 +1,17 @@
 // Single source of truth for the SQLite schema. Money is stored as integer cents.
 // Bump SCHEMA_VERSION whenever this changes: getDb() rebuilds + reseeds stale local DBs.
-// risk_holds exists (empty) so Transaction Risk Review (Session 3) can build on stable data.
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 // Drop order respects foreign keys.
 export const TABLES = [
+  "portal_meta",
   "audit_events",
   "kyc_decisions",
   "verification_checks",
   "risk_holds",
+  "fraud_alert_decisions",
+  "fraud_signals",
+  "fraud_alerts",
   "refund_payouts",
   "refunds",
   "transactions",
@@ -109,14 +112,60 @@ CREATE TABLE IF NOT EXISTS feature_flags (
   updated_by_role TEXT
 );
 
+-- Fraud Operations: alerts raised by the SIMULATED fraud monitoring system (no external provider).
+CREATE TABLE IF NOT EXISTS fraud_alerts (
+  id TEXT PRIMARY KEY,
+  customer_id TEXT NOT NULL REFERENCES customers(id),
+  transaction_id TEXT NOT NULL REFERENCES transactions(id),
+  severity TEXT NOT NULL CHECK (severity IN ('low', 'medium', 'high')),
+  status TEXT NOT NULL CHECK (status IN ('open', 'dismissed', 'escalated')),
+  -- Short scenario title shown in the queue + analyst-readable explanation.
+  scenario TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+-- Individual risk signals behind an alert. Every signal is simulated demo data.
+CREATE TABLE IF NOT EXISTS fraud_signals (
+  alert_id TEXT NOT NULL REFERENCES fraud_alerts(id),
+  code TEXT NOT NULL,
+  label TEXT NOT NULL,
+  detail TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'simulated' CHECK (source = 'simulated'),
+  PRIMARY KEY (alert_id, code)
+);
+
+-- Append-only investigation history (decision = open | dismiss | escalate).
+CREATE TABLE IF NOT EXISTS fraud_alert_decisions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  alert_id TEXT NOT NULL REFERENCES fraud_alerts(id),
+  decision TEXT NOT NULL CHECK (decision IN ('open', 'dismiss', 'escalate')),
+  from_status TEXT,
+  to_status TEXT NOT NULL,
+  note TEXT NOT NULL,
+  decided_by_role TEXT NOT NULL,
+  decided_at TEXT NOT NULL
+);
+
+-- Account risk hold placed by Escalate & Hold. Any ACTIVE hold blocks refund processing for the customer
+-- (canProcessRefund → ACCOUNT_RISK_HOLD). UNIQUE(alert_id): one hold per escalated alert.
 CREATE TABLE IF NOT EXISTS risk_holds (
   id TEXT PRIMARY KEY,
+  alert_id TEXT NOT NULL UNIQUE REFERENCES fraud_alerts(id),
   transaction_id TEXT NOT NULL REFERENCES transactions(id),
   customer_id TEXT NOT NULL REFERENCES customers(id),
   status TEXT NOT NULL CHECK (status IN ('active', 'released')),
   reason TEXT NOT NULL,
+  created_by_role TEXT NOT NULL,
   created_at TEXT NOT NULL,
   released_at TEXT
+);
+
+-- Environment marker. demo:reset only resets a database whose environment is 'demo'.
+CREATE TABLE IF NOT EXISTS portal_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS audit_events (
@@ -136,4 +185,7 @@ CREATE INDEX IF NOT EXISTS idx_kyc_decisions_customer ON kyc_decisions (customer
 CREATE INDEX IF NOT EXISTS idx_transactions_customer ON transactions (customer_id);
 CREATE INDEX IF NOT EXISTS idx_refunds_customer ON refunds (customer_id);
 CREATE INDEX IF NOT EXISTS idx_refunds_transaction ON refunds (transaction_id);
+CREATE INDEX IF NOT EXISTS idx_fraud_alerts_customer ON fraud_alerts (customer_id);
+CREATE INDEX IF NOT EXISTS idx_fraud_decisions_alert ON fraud_alert_decisions (alert_id);
+CREATE INDEX IF NOT EXISTS idx_risk_holds_customer ON risk_holds (customer_id, status);
 `;

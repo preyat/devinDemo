@@ -6,7 +6,7 @@ Guide for agents and humans changing this repo. Describes what **exists**, not p
 
 ```bash
 npm install
-npm run db:reset    # tsx scripts/db-reset.ts — drop, recreate + reseed data/portal.db (or $PORTAL_DB_PATH)
+npm run demo:reset  # tsx scripts/demo-reset.ts — guarded drop, recreate + reseed of the designated demo DB (db:reset = alias)
 npm run dev         # next dev on http://localhost:3000
 npm run typecheck   # tsc --noEmit
 npm run lint        # eslint . (flat config, next/core-web-vitals + next/typescript)
@@ -93,7 +93,7 @@ Dashio-derived theme (Inter font, sidebar layout, light/dark) · lucide-react ·
 | `src/server/schema.ts` | All DDL, `SCHEMA_VERSION`, `TABLES` (drop order). |
 | `src/server/seed-data.ts` | Hand-written synthetic customers (status, risk, scenario, history). |
 | `src/server/seed.ts` | Expands seed-data into rows; deterministic PRNG for transactions/refunds; `SEED_IDS`, `SEED_TIMESTAMP`; one `feature_flags` row per definition; one payout per processed refund. |
-| `src/server/lookups.ts` | Read-only queries + row types: customers (`searchCustomers`, `parseCustomerQuery`, `getCustomerQueueNeighbours`, `getKycSummary`), checks, decisions, transactions; refunds (`searchRefunds`, `parseRefundQuery`, `getRefund`, `getRefundSummary`, `listRefundsForTransaction`, `listPendingRefundIds`, `listPayoutsForRefund`); `getFeatureFlag`, `listFeatureFlags`. |
+| `src/server/lookups.ts` | Read-only queries + row types: customers (`searchCustomers`, `parseCustomerQuery`, `getCustomerQueueNeighbours`, `getKycSummary`), checks, decisions, transactions; refunds (`searchRefunds`, `parseRefundQuery`, `getRefund`, `getRefundSummary`, `listRefundsForTransaction`, `listPendingRefundIds`, `listPayoutsForRefund`); `getFeatureFlag`, `listFeatureFlags`; fraud (`searchFraudAlerts`, `parseFraudAlertQuery`, `getFraudAlert`, `getFraudAlertQueueNeighbours`, `getFraudSummary`, `listFraudSignals`, `listFraudAlertDecisions`, `listRiskHoldsForCustomer`, `getActiveRiskHold`). |
 | `src/server/roles.ts` | `ROLES`, `ROLE_LABELS`, `parseRoleClaim` (untrusted claim parsing). |
 | `src/server/permissions.ts` | `PERMISSIONS` policy map, `can`, `assertCan`. |
 | `src/server/errors.ts` | `OperationError(code, message, details?)` — expected failures; `details` (e.g. `{ reasons }`) is merged into the denied audit row. |
@@ -104,11 +104,16 @@ Dashio-derived theme (Inter font, sidebar layout, light/dark) · lucide-react ·
 | `src/server/refunds/service.ts` | `REFUND_RULES` (ordered, single source), `evaluateRefundRules` / `canProcessRefund` / `canRejectRefund` (structured reasons, rules tagged by action), `processRefund` (full or partial), `rejectRefund`, `claimRefund`, `bulkProcessRefunds`. |
 | `src/server/feature-flags/definitions.ts` | Flag registry (`FEATURE_FLAGS`, key constants, `HIGH_VALUE_REFUND_LIMIT_CENTS`). |
 | `src/server/feature-flags/service.ts` | `isFeatureEnabled`, `allowedFlagDecisions`, `toggleFeatureFlag`. |
-| `scripts/db-reset.ts` | CLI for `npm run db:reset`. |
+| `scripts/demo-reset.ts` | CLI for `npm run demo:reset` / `db:reset`; calls `assertResettableDemoDb` before `resetDb`. |
+| `src/server/demo-guard.ts` | `assertResettableDemoDb(db, file)` — refuses `PORTAL_ENV=production`, paths other than `DEMO_DB_PATH` (default `data/portal.db`) and DBs not marked `portal_meta.environment='demo'`. |
+| `src/server/fraud/service.ts` | Fraud rules: `decideFraudAlert` (+ `dismissFraudAlert` / `escalateFraudAlert`), `FRAUD_ALERT_TRANSITIONS`, `allowedFraudDecisions`, `holdIdFor`. Codes `ROLE_NOT_PERMITTED`, `VALIDATION`, `ALERT_NOT_FOUND`, `INVALID_ALERT_TRANSITION`, `DUPLICATE_ESCALATION`. |
+| `src/server/fraud/holds.ts` | `getRefundBlockingHold`, `ACCOUNT_RISK_HOLD_MESSAGE` — used by the `ACCOUNT_RISK_HOLD` refund rule. |
+| `src/server/fraud/seed-data.ts` | The five simulated fraud cases (alerts, signals, extra transactions/refunds, Priya's escalation). |
 | `scripts/smoke.mjs` | Playwright (playwright-core) browser smoke checks; extend per workflow. |
 | `scripts/new-workflow.ts` | Scaffold generator for `npm run new:workflow`. |
 | `tests/helpers.ts` | `createTestDb()` — fresh seeded `:memory:` DB. |
 | `tests/kyc.test.ts`, `tests/seed.test.ts`, `tests/eligibility.test.ts` | Service, seed consistency/determinism, KYC gate tests. |
+| `tests/fraud.test.ts` | Fraud seed (5 cases, Alex/Priya fixtures), dismiss/escalate, roles, transitions, rollback, `ACCOUNT_RISK_HOLD`, demo-reset guard. |
 | `tests/refunds.test.ts`, `tests/refund-actions.test.ts`, `tests/feature-flags.test.ts` | Refund eligibility/processing (Maya, Jordan, Ben, David, roles, audit, rollback) and flag administration. |
 
 ## Data model
@@ -119,7 +124,7 @@ review_type `onboarding | periodic_refresh | triggered` + review_reason + review
 `kyc_decisions` (append-only history: decision, from/to status, note, role, time; `open_review` rows are written by role `system` when an existing customer is re-reviewed), `transactions`,
 `refunds` (status `pending | processed | rejected`; closed rows have `processed_at`, `processed_by_role`, `processing_note`; `approved_amount_cents` = paid amount, `assigned_to`/`assigned_at` = claim),
 `refund_payouts` (simulated money movement; `UNIQUE(refund_id)` — one per processed refund),
-`feature_flags` (`key`, `enabled`, `description`, `updated_at`, `updated_by_role`; seeded from `definitions.ts`), `risk_holds` (empty), `audit_events`.
+`feature_flags` (`key`, `enabled`, `description`, `updated_at`, `updated_by_role`; seeded from `definitions.ts`), `fraud_alerts` (severity `low | medium | high`, status `open | dismissed | escalated`, scenario + analyst-readable reason, linked customer + transaction), `fraud_signals` (source always `simulated`), `fraud_alert_decisions` (append-only; `open` rows by `system`), `risk_holds` (active/released account hold; `UNIQUE(alert_id)`, `created_by_role`; any **active** hold blocks refund processing), `portal_meta` (`environment='demo'` marker), `audit_events`.
 
 ## Service boundaries
 
@@ -174,7 +179,7 @@ review_type `onboarding | periodic_refresh | triggered` + review_reason + review
   not the value (this broke the theme cookie once). Put shared constants in `src/lib/*` without `"use client"`.
 - Bootstrap's `--bs-offcanvas-zindex` is only defined on `.offcanvas`; use the Sass `$zindex-offcanvas` instead.
 - Sass deprecation noise from Bootstrap is silenced in `next.config.ts` (`sassOptions`).
-- `getDb()` caches the connection on `globalThis`; `npm run db:reset` works while `npm run dev` is running,
+- `getDb()` caches the connection on `globalThis`; `npm run demo:reset` works while `npm run dev` is running,
   but restart `npm run dev` after a `SCHEMA_VERSION` bump.
 - Seed data is dated around `SEED_TIMESTAMP` (2026-01-15); live decisions use the real clock.
 - `data/*.db` is git-ignored.
@@ -195,3 +200,7 @@ review_type `onboarding | periodic_refresh | triggered` + review_reason + review
 
 Use `.agents/skills/update-docs/SKILL.md` after any change. To add a workflow, use
 `.agents/skills/build-internal-tool/SKILL.md`.
+- Seeds that need realistic *decided* state (e.g. Priya's escalated alert) should call the real service with a fixed
+  `now` (`runAuditedOperation` accepts `now`), so holds, history and audit rows match live behaviour exactly.
+- Smoke checks share one DB in order: a check that escalates Alex's alert blocks `ref_alex_350` for every later check.
+- Never bypass `assertResettableDemoDb` when resetting a real file; `resetDb` itself is unguarded (tests use `:memory:`).

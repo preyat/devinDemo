@@ -163,11 +163,63 @@ const checks = [
     },
   },
   {
+    name: "Fraud Operations: queue + filters; Alex's refund eligible before escalation; Payments Operator forbidden",
+    async run(page) {
+      await setRole(page, "payments_operator");
+      await page.goto(`${BASE}/fraud`);
+      for (const id of ["alert_alex_4500", "alert_jamie_velocity", "alert_maya_chen_9800", "alert_sam_device", "alert_priya_2750"]) {
+        assert.equal(await page.locator(`[data-testid=row-${id}]`).count(), 1, `${id} in queue`);
+      }
+      await page.goto(`${BASE}/fraud?severity=high&status=open`);
+      assert.equal(await page.locator("[data-testid^=row-alert_]").count(), 2);
+      await page.goto(`${BASE}/fraud?status=escalated`);
+      assert.equal(await page.locator("[data-testid^=row-alert_]").count(), 1);
+      assert.equal(await page.locator("[data-testid=row-alert_priya_2750]").count(), 1);
+      await page.goto(`${BASE}/refunds`);
+      assert.equal(await page.locator("[data-testid=blocked-ref_alex_350]").count(), 0, "Alex eligible before escalation");
+      assert.match(await page.textContent("[data-testid=blocked-ref_priya_shah_120]"), /ACCOUNT_RISK_HOLD/);
+      await page.goto(`${BASE}/fraud`);
+      await page.locator("[data-testid=row-alert_alex_4500] td").first().click();
+      await page.waitForURL(/\/fraud\/alert_alex_4500/);
+      assert.match(await page.textContent("[data-testid=alert-reason]"), /new device|never seen/i);
+      assert.match(await page.textContent("[data-testid=fraud-signals]"), /New device[\s\S]*Unusual location/);
+      assert.match(await page.textContent("[data-testid=hold-status]"), /No active account risk hold/);
+      assert.match(await page.textContent("[data-testid=role-notice]"), /Only Risk Admins/);
+      assert.match(await decide(page, "escalate", "attempt"), /forbidden.*ROLE_NOT_PERMITTED/);
+      await setRole(page, "kyc_reviewer");
+    },
+  },
+  {
+    name: "Fraud Operations: Risk Admin dismisses Sam (no hold), escalates Alex; Alex's refund blocked with ACCOUNT_RISK_HOLD",
+    async run(page) {
+      await setRole(page, "risk_admin");
+      await page.goto(`${BASE}/fraud/alert_sam_device`);
+      assert.match(await decide(page, "dismiss", "Browser update; matches customer's usual IP and city."), /dismissed.*No account hold created/);
+      await page.reload();
+      assert.match(await page.textContent("[data-testid=hold-status]"), /No active account risk hold/);
+      await page.goto(`${BASE}/fraud/alert_alex_4500`);
+      assert.match(await decide(page, "escalate", "Customer confirmed they did not send the wire."), /escalated.*risk hold hold_alex_4500/);
+      await page.reload();
+      assert.match(await page.textContent("[data-testid=hold-status]"), /Active hold/);
+      assert.match(await page.textContent("[data-testid=fraud-audit]"), /fraud_alert\.escalate[\s\S]*fraud_alert\.escalate/); // success + earlier forbidden attempt
+      assert.match(await page.textContent("[data-testid=read-only]"), /read-only/);
+      await setRole(page, "payments_operator");
+      await page.goto(`${BASE}/refunds`);
+      assert.match(await page.textContent("[data-testid=blocked-ref_alex_350]"), /ACCOUNT_RISK_HOLD/);
+      await page.goto(`${BASE}/refunds/ref_alex_350`);
+      assert.match(await page.textContent("[data-testid=risk-hold-banner]"), /Account under risk review — refund processing paused\./);
+      assert.match(await decide(page, "process", "Duplicate confirmed"), /Account under risk review — refund processing paused\./);
+      await page.reload();
+      assert.match(await page.textContent("[data-testid=refund-details]"), /Pending/);
+      await setRole(page, "kyc_reviewer");
+    },
+  },
+  {
     name: "Refunds queue actions: partial refund, claim + reject, bulk process",
     async run(page) {
       await setRole(page, "payments_operator");
-      await page.goto(`${BASE}/refunds/ref_alex_350`);
-      assert.match(await decide(page, "process", "Goodwill partial", { amount: "120.50" }), /partial refund of \$120\.50 \(of \$350\.00 requested\)/);
+      await page.goto(`${BASE}/refunds/ref_elena_popescu_3`);
+      assert.match(await decide(page, "process", "Goodwill partial", { amount: "120.50" }), /partial refund of \$120\.50 \(of \$472\.00 requested\)/);
       await page.goto(`${BASE}/refunds/ref_ben_180_dup`);
       assert.match(await decide(page, "claim", "Looking into it", { assignee: "Sam R." }), /claimed by Sam R\./);
       await page.goto(`${BASE}/refunds?assigned=claimed`);

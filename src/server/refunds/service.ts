@@ -3,6 +3,7 @@ import type { Db } from "../db";
 import { OperationError, type OperationErrorCode } from "../errors";
 import { BLOCK_HIGH_VALUE_REFUNDS, HIGH_VALUE_REFUND_LIMIT_CENTS, PAUSE_REFUND_PROCESSING } from "../feature-flags/definitions";
 import { isFeatureEnabled } from "../feature-flags/service";
+import { ACCOUNT_RISK_HOLD_MESSAGE, getRefundBlockingHold } from "../fraud/holds";
 import { isKycRestricted } from "../kyc/eligibility";
 import { getRefund, listRefundsForTransaction, type RefundRow } from "../lookups";
 import { runAuditedOperation, type OperationResult } from "../operation";
@@ -17,6 +18,7 @@ export type RefundBlockCode =
   | "ALREADY_REFUNDED"
   | "REFUND_NOT_PENDING"
   | "DUPLICATE_REFUND"
+  | "ACCOUNT_RISK_HOLD"
   | "KYC_NOT_APPROVED"
   | "REFUNDS_PAUSED"
   | "AMOUNT_OVER_LIMIT"
@@ -55,8 +57,8 @@ interface RefundRule {
 
 /**
  * Ordered eligibility rules: the SINGLE place refund processing rules live. Order = error precedence
- * (forbidden → invalid_transition → rule_violation). Extension point: Session 3 appends a RISK_HOLD_ACTIVE
- * rule here (reading risk_holds) — the page, service and audit pick it up automatically.
+ * (forbidden → invalid_transition → rule_violation). New cross-workflow rules are appended here only
+ * (e.g. ACCOUNT_RISK_HOLD from Fraud Operations) — the page, queue, bulk, service and audit pick them up automatically.
  */
 export const REFUND_RULES: RefundRule[] = [
   {
@@ -121,6 +123,16 @@ export const REFUND_RULES: RefundRule[] = [
       isFeatureEnabled(db, BLOCK_HIGH_VALUE_REFUNDS) && refund.amountCents > HIGH_VALUE_REFUND_LIMIT_CENTS
         ? `${formatMoney(refund.amountCents, refund.currency)} exceeds the ${formatMoney(HIGH_VALUE_REFUND_LIMIT_CENTS)} portal limit; escalate to Risk.`
         : null,
+  },
+  {
+    code: "ACCOUNT_RISK_HOLD",
+    actions: ["process"],
+    label: "No active account risk hold (Fraud Operations)",
+    errorCode: "rule_violation",
+    check: ({ db, refund }) => {
+      const hold = getRefundBlockingHold(db, refund.customerId);
+      return hold ? `${ACCOUNT_RISK_HOLD_MESSAGE} Hold ${hold.id} from fraud alert ${hold.alertId}.` : null;
+    },
   },
 ];
 

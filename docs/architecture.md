@@ -31,7 +31,7 @@ flowchart LR
     DB["db.ts<br/>getDb / openDb / resetDb"]
   end
 
-  SQLite[("data/portal.db<br/>customers · verification_checks · kyc_decisions<br/>transactions · refunds · refund_payouts<br/>feature_flags · risk_holds · audit_events")]
+  SQLite[("data/portal.db<br/>customers · verification_checks · kyc_decisions<br/>transactions · refunds · refund_payouts<br/>feature_flags · fraud_alerts · fraud_signals<br/>fraud_alert_decisions · risk_holds · portal_meta · audit_events")]
 
   Page --> Session
   Page --> Look
@@ -55,7 +55,7 @@ flowchart LR
   Look --> DB
   Audit --> DB
   DB --> SQLite
-  Reset["scripts/db-reset.ts<br/>seed.ts + seed-data.ts"] --> DB
+  Reset["scripts/demo-reset.ts (guarded)<br/>seed.ts + seed-data.ts + fraud/seed-data.ts"] --> DB
   Tests["tests/*.test.ts<br/>createTestDb(:memory:)"] --> Svc
   Tests --> Elig
   Tests --> Ref
@@ -114,9 +114,20 @@ not `approved` (including `info_requested`) is restricted. Used by the Refunds `
 | `KYC_NOT_APPROVED` | `block_refunds_unverified_kyc` ON and `isKycRestricted` | `rule_violation` |
 | `REFUNDS_PAUSED` | `pause_refund_processing` ON | `rule_violation` |
 | `AMOUNT_OVER_LIMIT` | `block_high_value_refunds` ON and amount > $1,000 | `rule_violation` |
+| `ACCOUNT_RISK_HOLD` | customer has an **active** row in `risk_holds` (Fraud Operations Escalate & Hold); process only — reject/claim still allowed | `rule_violation` |
 
-Denied audit rows carry `details.reasons` (all failing codes). **Session 3 extension point:** append a
-`RISK_HOLD_ACTIVE` rule to `REFUND_RULES` that reads `risk_holds`; page, service and audit pick it up with no other change.
+Denied audit rows carry `details.reasons` (all failing codes). `ACCOUNT_RISK_HOLD` was added as one appended
+rule — the Refunds queue badge, refund page checklist/banner, bulk processing and `processRefund` all picked it up with no
+other change.
+
+## Fraud Operations
+
+`decideFraudAlert(db, role, { alertId, decision: "dismiss" | "escalate", note }, now)` in `src/server/fraud/service.ts`:
+permission (`fraud_alert.dismiss` / `fraud_alert.escalate`, Risk Admin only) → Zod (reason required) → load alert →
+`FRAUD_ALERT_TRANSITIONS` (`open → dismissed | escalated`; repeated escalation = `DUPLICATE_ESCALATION`, anything
+else = `INVALID_ALERT_TRANSITION`) → guarded `UPDATE … WHERE status = 'open'` → (escalate) insert `risk_holds` row →
+append `fraud_alert_decisions` → success audit. All inside `runAuditedOperation`, so a failed audit write rolls back the
+transition and the hold. Priya Shah's seeded escalation goes through this same function at a fixed timestamp.
 
 **Queue actions share the rules.** Each rule lists the `actions` it gates (`process | reject | claim`);
 `evaluateRefundRules(db, role, id, action, payoutCents?)` filters by action, and `canProcessRefund` / `canRejectRefund`

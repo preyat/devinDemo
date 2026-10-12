@@ -19,6 +19,8 @@ export interface AuditedOperation {
    * Throw OperationError for expected failures; return a success message + details.
    */
   execute: () => { message: string; details?: Record<string, unknown> };
+  /** Timestamp for the audit event (services pass their `now` so tests and seeds are deterministic). */
+  now?: Date;
 }
 
 /**
@@ -38,7 +40,7 @@ export function runAuditedOperation(op: AuditedOperation): OperationResult {
   try {
     const result = op.db.transaction(() => {
       const r = op.execute();
-      writeAuditEvent(op.db, { ...base, outcome: "success", message: r.message, details: r.details });
+      writeAuditEvent(op.db, { ...base, outcome: "success", message: r.message, details: r.details }, op.now);
       return r;
     })();
     return { ok: true, message: result.message };
@@ -49,7 +51,7 @@ export function runAuditedOperation(op: AuditedOperation): OperationResult {
       outcome: "denied",
       message: err.message,
       details: { code: err.code, ...err.details },
-    });
+    }, op.now);
     return { ok: false, code: err.code, message: err.message };
   }
 }

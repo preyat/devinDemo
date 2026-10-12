@@ -8,6 +8,8 @@ export const PERMISSIONS = {
   "refund.reject": ["payments_operator"],
   "refund.claim": ["payments_operator"],
   "feature_flag.toggle": ["risk_admin"],
+  "fraud_alert.dismiss": ["risk_admin"],
+  "fraud_alert.escalate": ["risk_admin"],
   "kyc.decide": ["kyc_reviewer"],
 } as const satisfies Record<string, readonly Role[]>;
 
