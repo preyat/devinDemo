@@ -74,6 +74,10 @@ export interface Refund {
   processedAt: string | null;
   processedByRole: string | null;
   processingNote: string | null;
+  /** Paid-out amount once processed; less than amountCents for a partial refund. */
+  approvedAmountCents: number | null;
+  assignedTo: string | null;
+  assignedAt: string | null;
 }
 
 /** Refund queue row: refund + customer name and current KYC status. */
@@ -223,7 +227,8 @@ export function getTransaction(db: Db, id: string): Transaction | null {
 
 const REFUND_COLUMNS = `r.id, r.customer_id AS customerId, r.transaction_id AS transactionId, r.amount_cents AS amountCents,
   r.currency, r.status, r.reason, r.created_at AS createdAt, r.processed_at AS processedAt,
-  r.processed_by_role AS processedByRole, r.processing_note AS processingNote`;
+  r.processed_by_role AS processedByRole, r.processing_note AS processingNote,
+  r.approved_amount_cents AS approvedAmountCents, r.assigned_to AS assignedTo, r.assigned_at AS assignedAt`;
 
 export function listRefundsForCustomer(db: Db, customerId: string): Refund[] {
   return db
@@ -271,6 +276,7 @@ export const refundQuerySchema = z.object({
   q: z.string().trim().max(100).catch(""),
   status: z.enum([...REFUND_STATUSES, "all"]).catch("pending"),
   kyc: z.enum(["all", "approved", "not_approved"]).catch("all"),
+  assigned: z.enum(["all", "unassigned", "claimed"]).catch("all"),
   sort: z.enum(Object.keys(REFUND_SORTS) as [keyof typeof REFUND_SORTS]).catch("requested_desc"),
   page: customerQuerySchema.shape.page,
   pageSize: customerQuerySchema.shape.pageSize,
@@ -283,6 +289,7 @@ export function parseRefundQuery(raw: Record<string, string | string[] | undefin
     q: first(raw.q) ?? "",
     status: first(raw.status),
     kyc: first(raw.kyc),
+    assigned: first(raw.assigned),
     sort: first(raw.sort),
     page: first(raw.page),
     pageSize: first(raw.pageSize),
@@ -302,6 +309,8 @@ export function searchRefunds(db: Db, query: RefundQuery): { rows: RefundRow[]; 
   }
   if (query.kyc === "approved") where.push("c.kyc_status = 'approved'");
   else if (query.kyc === "not_approved") where.push("c.kyc_status != 'approved'");
+  if (query.assigned === "unassigned") where.push("r.assigned_to IS NULL");
+  else if (query.assigned === "claimed") where.push("r.assigned_to IS NOT NULL");
   const from = `FROM refunds r JOIN customers c ON c.id = r.customer_id ${where.length ? `WHERE ${where.join(" AND ")}` : ""}`;
   const { total } = db.prepare(`SELECT COUNT(*) AS total ${from}`).get(params) as { total: number };
   const page = Math.min(query.page, Math.max(1, Math.ceil(total / query.pageSize)));

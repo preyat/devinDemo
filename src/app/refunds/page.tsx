@@ -27,6 +27,8 @@ import {
 import { can } from "@/server/permissions";
 import type { Role } from "@/server/roles";
 import { businessBlockers, canProcessRefund } from "@/server/refunds/service";
+import { BulkProcessForm } from "./BulkProcessForm";
+import { ClaimRefundForm } from "./ClaimRefundForm";
 import { ProcessRefundForm } from "./ProcessRefundForm";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +54,15 @@ const FILTERS: FilterSelect[] = [
     ],
   },
   {
+    name: "assigned",
+    label: "Assignment",
+    options: [
+      { value: "all", label: "Any assignment" },
+      { value: "unassigned", label: "Unassigned" },
+      { value: "claimed", label: "Claimed" },
+    ],
+  },
+  {
     name: "sort",
     label: "Sort",
     options: [
@@ -74,6 +85,9 @@ export default async function RefundsPage({ searchParams }: { searchParams: Prom
   const blockedPending = listPendingRefundIds(db).filter((id) => businessBlockers(canProcessRefund(db, role, id)).length > 0).length;
   const activeFlags = listFeatureFlags(db).filter((f) => f.enabled);
   const selected = selectedId ? canProcessRefund(db, role, selectedId) : null;
+  const bulkEligible = rows
+    .filter((r) => r.status === "pending" && businessBlockers(canProcessRefund(db, role, r.id)).length === 0)
+    .map((r) => ({ id: r.id, label: `${r.customerName} · ${formatMoney(r.amountCents, r.currency)} · ${r.id}` }));
 
   return (
     <>
@@ -111,10 +125,19 @@ export default async function RefundsPage({ searchParams }: { searchParams: Prom
                   { header: "Status", render: (r) => <StatusBadge status={r.status} /> },
                   { header: "KYC", render: (r) => <StatusBadge status={r.customerKycStatus} /> },
                   { header: "Eligibility", render: (r) => <EligibilityBadge refundId={r.id} status={r.status} role={role} /> },
+                  { header: "Assignee", render: (r) => r.assignedTo ?? <span className="text-muted small">—</span>, className: "text-nowrap" },
                   { header: "Requested", render: (r) => r.createdAt.slice(0, 10), className: "text-nowrap" },
                 ]}
               />
               <QueuePagination page={page} pageSize={query.pageSize} total={total} />
+            </CardBody>
+          </Card>
+          <Card className="mt-3">
+            <CardHeader as="h2" className="h6 mb-0">
+              Bulk process <span className="small text-muted fw-normal">(eligible pending refunds on this page)</span>
+            </CardHeader>
+            <CardBody>
+              <BulkProcessForm refunds={bulkEligible} canProcess={can(role, "refund.process")} />
             </CardBody>
           </Card>
         </Col>
@@ -166,7 +189,11 @@ function RefundDetail({ refundId, role }: { refundId: string; role: Role | null 
         }
         fields={[
           { label: "Refund ID", value: <code>{r.id}</code> },
-          { label: "Amount", value: formatMoney(r.amountCents, r.currency) },
+          { label: "Amount requested", value: formatMoney(r.amountCents, r.currency) },
+          ...(r.approvedAmountCents !== null
+            ? [{ label: "Amount paid", value: `${formatMoney(r.approvedAmountCents, r.currency)}${r.approvedAmountCents < r.amountCents ? " (partial)" : ""}` }]
+            : []),
+          { label: "Assignee", value: r.assignedTo ? `${r.assignedTo} (since ${formatDateTime(r.assignedAt)})` : "Unassigned" },
           { label: "Reason", value: r.reason },
           { label: "Requested", value: formatDateTime(r.createdAt) },
           { label: "Customer", value: <Link href={`/kyc?customer=${r.customerId}&status=all`}>{r.customerId}</Link> },
@@ -197,11 +224,27 @@ function RefundDetail({ refundId, role }: { refundId: string; role: Role | null 
       </Card>
 
       <Card>
-        <CardHeader as="h2" className="h6 mb-0">Process</CardHeader>
+        <CardHeader as="h2" className="h6 mb-0">Process or reject</CardHeader>
         <CardBody>
-          <ProcessRefundForm key={r.id} refundId={r.id} open={r.status === "pending"} canProcess={can(role, "refund.process")} blocked={blockers.length > 0} />
+          <ProcessRefundForm
+            key={r.id}
+            refundId={r.id}
+            requestedDollars={(r.amountCents / 100).toFixed(2)}
+            open={r.status === "pending"}
+            canProcess={can(role, "refund.process")}
+            blocked={blockers.length > 0}
+          />
         </CardBody>
       </Card>
+
+      {r.status === "pending" && (
+        <Card>
+          <CardHeader as="h2" className="h6 mb-0">Claim</CardHeader>
+          <CardBody>
+            <ClaimRefundForm key={r.id} refundId={r.id} assignedTo={r.assignedTo} />
+          </CardBody>
+        </Card>
+      )}
 
       <Card>
         <CardHeader as="h2" className="h6 mb-0">Payout</CardHeader>

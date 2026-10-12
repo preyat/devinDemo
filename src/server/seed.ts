@@ -22,6 +22,7 @@ export const SEED_IDS = {
 } as const;
 
 const PROCESSED_NOTE = "Refund issued to original payment method.";
+export const DAVID_REFUND_ASSIGNEE = "Priya N.";
 const REJECTED_NOTE = "Rejected: request outside the refund policy window.";
 
 type CheckType = "identity" | "address" | "sanctions" | "pep";
@@ -139,8 +140,8 @@ export function seedDatabase(db: Database.Database): void {
   );
   const insertRefundRow = db.prepare(
     `INSERT INTO refunds (id, customer_id, transaction_id, amount_cents, currency, status, reason, created_at, processed_at,
-       processed_by_role, processing_note)
-     VALUES (?, ?, ?, ?, 'USD', ?, ?, ?, ?, ?, ?)`,
+       processed_by_role, processing_note, approved_amount_cents)
+     VALUES (?, ?, ?, ?, 'USD', ?, ?, ?, ?, ?, ?, ?)`,
   );
   const insertPayout = db.prepare(
     `INSERT INTO refund_payouts (refund_id, customer_id, amount_cents, currency, created_by_role, created_at) VALUES (?, ?, ?, 'USD', ?, ?)`,
@@ -149,7 +150,7 @@ export function seedDatabase(db: Database.Database): void {
   const insertRefund = (id: string, customerId: string, txnId: string, amount: number, status: string, reason: string, createdAt: string, processedAt: string | null) => {
     const closed = status !== "pending";
     insertRefundRow.run(id, customerId, txnId, amount, status, reason, createdAt, processedAt, closed ? "payments_operator" : null,
-      status === "processed" ? PROCESSED_NOTE : status === "rejected" ? REJECTED_NOTE : null);
+      status === "processed" ? PROCESSED_NOTE : status === "rejected" ? REJECTED_NOTE : null, status === "processed" ? amount : null);
     if (status === "processed") insertPayout.run(id, customerId, amount, "payments_operator", processedAt);
   };
   const rng = mulberry32(20260115);
@@ -251,6 +252,8 @@ export function seedDatabase(db: Database.Database): void {
     // High-value refund: blocked while block_high_value_refunds is ON (seeded ON).
     insertTxn.run("txn_david_2400", SEED_IDS.david, 240000, "Office equipment order", "completed", at(9));
     insertRefund("ref_david_2400", SEED_IDS.david, "txn_david_2400", 240000, "pending", "Order cancelled before shipment", at(5), null);
+    // Claimed by an operator who is chasing the high-value approval (claim is coordination only).
+    db.prepare(`UPDATE refunds SET assigned_to = ?, assigned_at = ? WHERE id = ?`).run(DAVID_REFUND_ASSIGNEE, at(1), "ref_david_2400");
 
     const insertFlag = db.prepare(`INSERT INTO feature_flags (key, enabled, description, updated_at, updated_by_role) VALUES (?, ?, ?, ?, NULL)`);
     for (const f of FEATURE_FLAGS) insertFlag.run(f.key, f.seedEnabled ? 1 : 0, f.description, SEED_TIMESTAMP);

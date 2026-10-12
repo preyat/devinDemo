@@ -118,6 +118,19 @@ not `approved` (including `info_requested`) is restricted. Used by the Refunds `
 Denied audit rows carry `details.reasons` (all failing codes). **Session 3 extension point:** append a
 `RISK_HOLD_ACTIVE` rule to `REFUND_RULES` that reads `risk_holds`; page, service and audit pick it up with no other change.
 
+**Queue actions share the rules.** Each rule lists the `actions` it gates (`process | reject | claim`);
+`evaluateRefundRules(db, role, id, action, payoutCents?)` filters by action, and `canProcessRefund` / `canRejectRefund`
+are thin wrappers. Role + state rules gate every action; money/flag rules gate only `process`. Every service checks the
+action's permission (`refund.process`, `refund.reject`, `refund.claim`) **before** Zod, so a forbidden role is audited as
+`ROLE_NOT_PERMITTED`, not as a validation error.
+
+| Action | Service | Audit action | Notes |
+|---|---|---|---|
+| Reject | `rejectRefund` | `refund.reject` | guarded `pending → rejected`; no payout; flags never block declining |
+| Partial | `processRefund({ amount })` | `refund.process` (`partial: true`) | `approved_amount_cents` ≤ request (`AMOUNT_EXCEEDS_REQUEST`); payout = approved; `DUPLICATE_REFUND` sums paid-out amounts; `AMOUNT_OVER_LIMIT` uses the requested amount so partials can't bypass the limit |
+| Claim / release | `claimRefund` | `refund.claim` / `refund.release` | `assigned_to`/`assigned_at`; `ALREADY_CLAIMED` / `NOT_CLAIMED`; does not lock processing |
+| Bulk | `bulkProcessRefunds` | `refund.bulk_process` (entity `refund_batch`) + one `refund.process` per refund | each refund runs `processRefund` in a nested savepoint, so blocked ones are denied/audited without rolling back the rest |
+
 ## Feature flags
 
 `src/server/feature-flags/definitions.ts` is the registry (key, label, description, where it is enforced, the refund
