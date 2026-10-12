@@ -224,9 +224,17 @@ function CustomerCase({ customerId, canDecide }: { customerId: string; canDecide
             getRowKey={(d) => String(d.id)}
             emptyText="No decisions yet."
             columns={[
-              { header: "When", render: (d) => formatDateTime(d.decidedAt), className: "text-nowrap" },
-              { header: "Decision", render: (d) => <StatusBadge status={d.toStatus} label={statusLabel(d.decision)} /> },
-              { header: "By", render: (d) => d.decidedByRole },
+              { header: "When", render: (d) => d.decidedAt.slice(0, 10), className: "text-nowrap" },
+              {
+                header: "Decision",
+                render: (d) => (
+                  <>
+                    <StatusBadge status={d.toStatus} label={statusLabel(d.decision)} />
+                    <div className="small text-muted">{d.decidedByRole}</div>
+                  </>
+                ),
+                className: "text-nowrap",
+              },
               { header: "Note", render: (d) => d.note },
             ]}
           />
