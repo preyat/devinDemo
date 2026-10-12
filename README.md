@@ -51,59 +51,17 @@ npm run demo:reset   # create/reset data/portal.db with seed data (db:reset is a
 npm run dev          # http://localhost:3000/kyc
 ```
 
-Pick a role in the navbar and follow one of the demo walkthroughs below. Run `npm run demo:reset` to restore
-the initial state at any time.
+Pick a role in the navbar. **Quick demo (Fraud Operations → Refunds):** as Payments Operator, Alex's refund
+`ref_alex_350` is eligible. As Risk Admin, enter a note and click **Escalate & Hold** on alert `alert_alex_4500`. Back as Payments
+Operator, the server now blocks the refund with `ACCOUNT_RISK_HOLD`. `npm run demo:reset` restores the initial state.
+
+Full step-by-step walkthroughs, the seed scenarios and the reset guard are in [docs/demo.md](docs/demo.md).
 
 ## Demo data
 
-54 synthetic customers (50 KYC customers — 20 approved, 15 pending, 10 awaiting info, 5 rejected — plus 4 approved Fraud Operations customers),
-118 transactions, 29 refunds (14 processed, each with one payout) and 5 fraud alerts, fully reproducible on every `npm run demo:reset`.
-
-Each case has a review type explaining why it is in the queue: **Onboarding** (new applicant — no account
-activity until approved), **Periodic refresh** or **Triggered** (existing customer being re-reviewed — keeps their
-transaction/refund history). Demo scenarios:
-
-| Customer       | KYC      | Risk   | Review           | Scenario |
-| -------------- | -------- | ------ | ---------------- | -------- |
-| Maya Reed      | pending  | medium | Triggered        | All checks passed → can be approved; $750 purchase + pending refund triggered the review |
-| Samira Patel   | pending  | medium | Periodic refresh | Reported address change; proof of address missing → approval blocked; request info |
-| Viktor Sokolov | pending  | high   | Onboarding       | Potential sanctions match → approval blocked |
-| Lucas Moreau   | pending  | medium | Periodic refresh | Passport on file expired → approval blocked |
-| Jordan Lee     | approved | low    | —                | $420 refund already processed |
-| Alex Kim       | approved | low    | —                | $350 refund pending + separate $4,500 transaction; HIGH open fraud alert; no risk hold |
-| Ben Carter     | approved | low    | —                | $180 refund processed, then customer re-submitted → pending `ref_ben_180_dup` is blocked `DUPLICATE_REFUND` |
-| David Cohen    | approved | medium | —                | $2,400 pending refund → blocked `AMOUNT_OVER_LIMIT` while `block_high_value_refunds` is ON |
-
-Refund demo (Maya): as Risk Admin turn `block_refunds_unverified_kyc` ON → as Payments Operator Maya's `ref_maya_750` is
-blocked `KYC_NOT_APPROVED` → as KYC Reviewer approve Maya → as Payments Operator process it → a second attempt is
-rejected `ALREADY_REFUNDED`. Jordan's `ref_jordan_420` is already processed and read-only.
-
-Fraud Operations cases (all signals simulated; `src/server/fraud/seed-data.ts`):
-
-| Alert                  | Customer    | Severity | Status    | Scenario |
-| ---------------------- | ----------- | -------- | --------- | -------- |
-| `alert_alex_4500`      | Alex Kim    | HIGH     | OPEN      | Account takeover: new device + unusual location on the $4,500 wire. His $350 refund is pending and **eligible**; no hold. |
-| `alert_jamie_velocity` | Jamie Patel | MEDIUM   | OPEN      | Six gift-card purchases ($1,450) in 36 minutes. |
-| `alert_maya_chen_9800` | Maya Chen   | HIGH     | OPEN      | $9,800 transfer to a new beneficiary, ~70× her usual spend (one earlier processed $54 refund). |
-| `alert_sam_device`     | Sam Taylor  | LOW      | OPEN      | Low-confidence browser fingerprint change on a $62 renewal. |
-| `alert_priya_2750`     | Priya Shah  | HIGH     | ESCALATED | Escalated by Risk Admin (seeded through the real service): active hold `hold_priya_2750`, audit row, and her pending $120 refund is blocked `ACCOUNT_RISK_HOLD`. |
-
-Fraud demo (Alex): as Payments Operator `ref_alex_350` is eligible → as Risk Admin open `alert_alex_4500` and
-**Escalate & Hold** → as Payments Operator the refund shows `ACCOUNT_RISK_HOLD` / "Account under risk review — refund
-processing paused." and a processing attempt is rejected (refund stays pending, denial audited). Dismissing an alert never creates a hold.
-
-Flags: `block_refunds_unverified_kyc` OFF, `pause_refund_processing` OFF, `block_high_value_refunds` ON. One risk hold (Priya). The audit log holds only Priya's seeded escalation.
-
-### Repeatable demo reset
-
-`npm run demo:reset` restores the initial state (Alex's OPEN alert, no Alex hold, eligible pending $350 refund, Priya
-escalated). It is guarded (`src/server/demo-guard.ts`) and refuses to run when:
-
-- `PORTAL_ENV=production`;
-- the target (`PORTAL_DB_PATH`, default `data/portal.db`) is not the designated demo file (`DEMO_DB_PATH`, default `data/portal.db`);
-- the database exists but is not marked `portal_meta.environment = 'demo'` (written by the seed).
-
-The same guard protects the automatic reset `getDb()` performs after a `SCHEMA_VERSION` bump.
+Synthetic and deterministic: 54 customers, 118 transactions, 29 refunds and 5 fraud alerts, recreated identically by
+`npm run demo:reset`. The reset is guarded and refuses to touch a non-demo database. The named scenarios
+(Maya, Samira, Alex, Priya, …) are listed in [docs/demo.md](docs/demo.md#seed-data).
 
 ## Development
 
@@ -133,6 +91,7 @@ scripts/          db reset, smoke test, workflow scaffold
 
 - [AGENTS.md](AGENTS.md): file map, conventions and the agent skills table (for humans and agents).
 - [docs/architecture.md](docs/architecture.md): diagram, rules table and how to add a workflow.
+- [docs/demo.md](docs/demo.md): reviewer walkthroughs, seed scenarios and the demo reset guard.
 - Building a new tool with Devin: start with the `!build-internal-tool` playbook (source:
   [playbooks/build-internal-tool.devin.md](playbooks/build-internal-tool.devin.md)). It invokes the repo skill
   [.agents/skills/build-internal-tool/SKILL.md](.agents/skills/build-internal-tool/SKILL.md). Detailed procedure:

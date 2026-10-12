@@ -47,7 +47,7 @@ Copy their shape; do not invent new layers or a generic workflow engine.
 7. **Verify** — `npm run typecheck && npm run lint && npm test`; architecture greps from `review-internal-tool`;
    `npm run dev` + `SMOKE_CDP_URL=http://localhost:29229 npm run smoke` with new checks ordered as one story
    (see `browser-check`). Capture screenshots outside the repo for the PR. `npm run db:reset` afterwards.
-8. **Docs** — `update-docs` + `capture-session-learnings` (README scenarios, AGENTS.md file map/conventions,
+8. **Docs** — `update-docs` + `capture-session-learnings` (`docs/demo.md` scenarios + walkthroughs, AGENTS.md file map/conventions,
    architecture diagram + rules table, this skill).
 9. **PR** — branch `devin/<timestamp>-<slug>`; never commit `data/*.db` or screenshots. PR body: modules reused /
    new / existing services changed, rule table, commands + results, smoke output, screenshots, manual interventions,
