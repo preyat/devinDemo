@@ -16,20 +16,25 @@ async function setRole(page, role) {
   await page.waitForLoadState("networkidle");
 }
 
-async function decide(page, decision, note) {
-  const feedback = page.locator(FEEDBACK);
-  const before = (await feedback.count()) ? await feedback.textContent() : null;
-  await page.fill("#decision-note", note);
-  await page.click(`button[name=decision][value=${decision}]`);
+// Submits the DecisionForm that owns the given decision button (several forms can share a page). The form is
+// pinned as an element handle because its buttons change after success (e.g. "enable" becomes "disable").
+async function decide(page, decision, note, fill = {}) {
+  const form = await page.locator(`form:has(button[name=decision][value=${decision}])`).elementHandle();
+  const read = async () => {
+    const el = await form.$(FEEDBACK);
+    return el ? (await el.textContent()).trim() : null;
+  };
+  const before = await read();
+  await (await form.$("textarea[name=note]")).fill(note);
+  for (const [name, value] of Object.entries(fill)) await (await form.$(`[name=${name}]`)).fill(value);
+  await (await form.$(`button[name=decision][value=${decision}]`)).click();
   // Wait for a NEW result (the previous feedback alert stays rendered until replaced).
-  await page.waitForFunction(
-    ([sel, prev]) => {
-      const el = document.querySelector(sel);
-      return el && el.textContent && el.textContent !== prev;
-    },
-    [FEEDBACK, before],
-  );
-  return (await feedback.textContent()).trim();
+  for (let i = 0; i < 150; i++) {
+    const now = await read();
+    if (now && now !== before) return now;
+    await page.waitForTimeout(200);
+  }
+  throw new Error(`No new feedback after "${decision}"`);
 }
 
 const checks = [
@@ -48,6 +53,42 @@ const checks = [
       await page.locator("[data-testid=row-cus_samira_patel] td").nth(3).click();
       await page.waitForURL(/customer=cus_samira_patel/);
       assert.match(await page.textContent("[data-testid=case-reason]"), /Periodic refresh/);
+    },
+  },
+  {
+    name: "Feature Flags: Payments Operator rejected, Risk Admin turns block_refunds_unverified_kyc ON",
+    async run(page) {
+      await setRole(page, "payments_operator");
+      await page.goto(`${BASE}/feature-flags?flag=block_refunds_unverified_kyc`);
+      assert.match(await page.textContent("[data-testid=role-notice]"), /Risk Admin/);
+      assert.match(await decide(page, "enable", "attempt"), /forbidden/);
+      await setRole(page, "risk_admin");
+      await page.goto(`${BASE}/feature-flags?flag=block_refunds_unverified_kyc`);
+      assert.match(await decide(page, "enable", "Enforce KYC before refunds."), /turned ON/);
+      await page.reload();
+      assert.match(await page.textContent("[data-testid=flag-impact]"), /ref_maya_750/);
+    },
+  },
+  {
+    name: "Refunds: flag ON blocks Maya (KYC_NOT_APPROVED); flag OFF lifts it; flag back ON",
+    async run(page) {
+      await setRole(page, "payments_operator");
+      await page.goto(`${BASE}/refunds`);
+      assert.match(await page.textContent("[data-testid=blocked-ref_maya_750]"), /KYC_NOT_APPROVED/);
+      await page.locator("[data-testid=row-ref_maya_750] td").first().click();
+      await page.waitForURL(/refund=ref_maya_750/);
+      assert.match(await page.textContent("[data-testid=eligibility]"), /refunds are blocked for unverified customers/);
+      assert.match(await decide(page, "process", "Trying anyway"), /rule_violation.*KYC_NOT_APPROVED/);
+      await page.reload();
+      assert.equal(await page.locator("[data-testid=read-only]").count(), 0);
+
+      await setRole(page, "risk_admin");
+      await page.goto(`${BASE}/feature-flags?flag=block_refunds_unverified_kyc`);
+      assert.match(await decide(page, "disable", "Temporarily lift for testing."), /turned OFF/);
+      await page.goto(`${BASE}/refunds`);
+      assert.equal(await page.locator("[data-testid=blocked-ref_maya_750]").count(), 0);
+      await page.goto(`${BASE}/feature-flags?flag=block_refunds_unverified_kyc`);
+      assert.match(await decide(page, "enable", "Re-enable."), /turned ON/);
     },
   },
   {
@@ -80,6 +121,58 @@ const checks = [
       await setRole(page, "payments_operator");
       await page.goto(`${BASE}/kyc?customer=cus_hannah_schmidt`);
       assert.match(await decide(page, "approve", "attempt"), /forbidden/);
+      await setRole(page, "kyc_reviewer");
+    },
+  },
+  {
+    name: "Refunds: approved Maya is eligible, processes once; a stale second submit gets ALREADY_REFUNDED",
+    async run(page) {
+      await setRole(page, "payments_operator");
+      const url = `${BASE}/refunds?refund=ref_maya_750`;
+      await page.goto(url);
+      assert.equal(await page.locator("[data-testid=blocked-notice]").count(), 0);
+      const stale = await page.context().newPage();
+      await stale.goto(url);
+      assert.match(await decide(page, "process", "Refund to original card."), /Refund ref_maya_750 of \$750\.00 processed/);
+      assert.match(await decide(stale, "process", "Double submit"), /invalid_transition.*ALREADY_REFUNDED/);
+      await stale.close();
+      await page.goto(`${BASE}/refunds?status=processed&refund=ref_maya_750`);
+      assert.match(await page.textContent("[data-testid=read-only]"), /read-only/);
+      assert.equal(await page.locator("[data-testid=row-ref_maya_750]").count(), 1);
+    },
+  },
+  {
+    name: "Refunds: Jordan's processed refund is read-only; KYC Reviewer is forbidden by the backend",
+    async run(page) {
+      await setRole(page, "payments_operator");
+      await page.goto(`${BASE}/refunds?status=processed`);
+      await page.locator("[data-testid=row-ref_jordan_420] td").first().click();
+      await page.waitForURL(/refund=ref_jordan_420/);
+      assert.match(await page.textContent("[data-testid=eligibility]"), /already processed/);
+      assert.match(await page.textContent("[data-testid=read-only]"), /read-only/);
+      await setRole(page, "kyc_reviewer");
+      await page.goto(`${BASE}/refunds?refund=ref_alex_350`);
+      assert.match(await page.textContent("[data-testid=role-notice]"), /refund\.process/);
+      assert.match(await decide(page, "process", "attempt"), /forbidden.*ROLE_NOT_PERMITTED/);
+      await setRole(page, "kyc_reviewer");
+    },
+  },
+  {
+    name: "Refunds queue actions: partial refund, claim + reject, bulk process",
+    async run(page) {
+      await setRole(page, "payments_operator");
+      await page.goto(`${BASE}/refunds?refund=ref_alex_350`);
+      assert.match(await decide(page, "process", "Goodwill partial", { amount: "120.50" }), /partial refund of \$120\.50 \(of \$350\.00 requested\)/);
+      await page.goto(`${BASE}/refunds?refund=ref_ben_180_dup`);
+      assert.match(await decide(page, "claim", "Looking into it", { assignee: "Sam R." }), /claimed by Sam R\./);
+      await page.goto(`${BASE}/refunds?assigned=claimed`);
+      assert.equal(await page.locator("[data-testid=row-ref_ben_180_dup]").count(), 1);
+      await page.goto(`${BASE}/refunds?refund=ref_ben_180_dup`);
+      assert.match(await decide(page, "reject", "Duplicate of ref_ben_180"), /rejected for Ben Carter\. No money moved/);
+      await page.goto(`${BASE}/refunds`);
+      const selected = await page.locator("[data-testid=bulk-list] input:checked").count();
+      assert.ok(selected > 0, "bulk list has eligible refunds");
+      assert.match(await decide(page, "bulk", "Daily run"), new RegExp(`Bulk process: ${selected} of ${selected} refunds processed`));
       await setRole(page, "kyc_reviewer");
     },
   },

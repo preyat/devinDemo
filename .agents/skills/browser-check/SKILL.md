@@ -23,11 +23,14 @@ Prints `PASS`/`FAIL` per check; failures save `smoke-failure-<n>.png` (git-ignor
 `#demo-role`, `#queue-search`, `#filter-<name>`, `[data-testid=queue-range]`, `[data-testid="summary-<label>"]`,
 `[data-testid=row-<id>]` (whole row clickable), `#decision-note`, `button[name=decision][value=<decision>]`,
 `[data-testid=operation-feedback]` (`.alert-success`/`.alert-danger`), `[data-testid=approval-blocked]`,
-`[data-testid=read-only]`, `[data-testid=case-reason]`, `[data-testid=info-requested]`, `[data-testid=check-<label>]`.
+`[data-testid=read-only]`, `[data-testid=case-reason]`, `[data-testid=info-requested]`, `[data-testid=check-<label>]`,
+`[data-testid=role-notice]`, `[data-testid=blocked-notice]`, `[data-testid=blocked-<refundId>]` (queue reason codes),
+`[data-testid=eligibility]`, `[data-testid=active-flags]`, `[data-testid=flag-impact]`.
 Add `data-testid`s to new components instead of relying on text or position.
 
 ## Extend for a new workflow
 
 Append `{ name, run(page) }` to `checks` in `scripts/smoke.mjs`: allowed-role success, rule-blocked action with its
 explanation, forbidden role (`setRole(page, "...")` then restore `kyc_reviewer`), and a queue row opening a record.
-For PR screenshots, use the same playwright-core connection and embed full-page screenshots in the PR body.
+The DB is shared across checks within a run: order checks as one story (Feature Flags ON → Refunds blocked → KYC
+approves Maya → refund processes → stale second tab gets `ALREADY_REFUNDED`). For PR screenshots, use the same playwright-core connection and embed full-page screenshots in the PR body.

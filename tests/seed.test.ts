@@ -3,7 +3,8 @@ import { resetDb, type Db } from "@/server/db";
 import { getApprovalBlockers } from "@/server/kyc/service";
 import { getCustomer, getFeatureFlag, listKycDecisions, listRefundsForCustomer, listTransactionsForCustomer, listVerificationChecks } from "@/server/lookups";
 import { TABLES } from "@/server/schema";
-import { KYC_RESTRICTION_FLAG, SEED_IDS } from "@/server/seed";
+import { BLOCK_REFUNDS_UNVERIFIED_KYC } from "@/server/feature-flags/definitions";
+import { SEED_IDS } from "@/server/seed";
 import { createTestDb } from "./helpers";
 
 const dump = (db: Db) => Object.fromEntries(TABLES.map((t) => [t, db.prepare(`SELECT * FROM ${t} ORDER BY 1, 2`).all()]));
@@ -113,8 +114,30 @@ describe("seed data", () => {
     expect((db.prepare("SELECT COUNT(*) AS c FROM refunds").get() as { c: number }).c).toBeGreaterThan(10);
   });
 
+  it("seeds Session 2 refund scenarios: Ben's duplicate request and David's high-value refund", () => {
+    const refund = (id: string) => db.prepare("SELECT customer_id AS c, transaction_id AS t, amount_cents AS a, status FROM refunds WHERE id = ?").get(id);
+    expect(refund("ref_ben_180")).toEqual({ c: SEED_IDS.ben, t: "txn_ben_180", a: 18000, status: "processed" });
+    expect(refund("ref_ben_180_dup")).toEqual({ c: SEED_IDS.ben, t: "txn_ben_180", a: 18000, status: "pending" });
+    expect(refund("ref_david_2400")).toEqual({ c: SEED_IDS.david, t: "txn_david_2400", a: 240000, status: "pending" });
+    for (const id of [SEED_IDS.ben, SEED_IDS.david]) {
+      expect(db.prepare("SELECT kyc_status AS s FROM customers WHERE id = ?").get(id)).toEqual({ s: "approved" });
+    }
+  });
+
+  it("gives every processed refund exactly one matching payout and closed refunds a decider", () => {
+    const mismatched = db
+      .prepare(
+        `SELECT r.id FROM refunds r LEFT JOIN refund_payouts p ON p.refund_id = r.id
+         WHERE (r.status = 'processed') != (p.id IS NOT NULL)
+            OR (p.id IS NOT NULL AND (p.amount_cents != r.amount_cents OR p.customer_id != r.customer_id OR p.created_at != r.processed_at))
+            OR (r.status != 'pending') != (r.processed_by_role IS NOT NULL)`,
+      )
+      .all();
+    expect(mismatched).toEqual([]);
+  });
+
   it("starts with KYC restriction OFF, no risk holds and an empty audit log", () => {
-    expect(getFeatureFlag(db, KYC_RESTRICTION_FLAG)?.enabled).toBe(false);
+    expect(getFeatureFlag(db, BLOCK_REFUNDS_UNVERIFIED_KYC)?.enabled).toBe(false);
     expect(db.prepare("SELECT COUNT(*) AS c FROM risk_holds").get()).toEqual({ c: 0 });
     expect(db.prepare("SELECT COUNT(*) AS c FROM audit_events").get()).toEqual({ c: 0 });
   });

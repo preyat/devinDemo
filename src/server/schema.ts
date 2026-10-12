@@ -1,8 +1,7 @@
 // Single source of truth for the SQLite schema. Money is stored as integer cents.
 // Bump SCHEMA_VERSION whenever this changes: getDb() rebuilds + reseeds stale local DBs.
-// Tables for refunds, feature_flags and risk_holds exist now so later workflows
-// (Refunds, Feature Flags, Transaction Risk Review) can build on stable data.
-export const SCHEMA_VERSION = 3;
+// risk_holds exists (empty) so Transaction Risk Review (Session 3) can build on stable data.
+export const SCHEMA_VERSION = 5;
 
 // Drop order respects foreign keys.
 export const TABLES = [
@@ -10,6 +9,7 @@ export const TABLES = [
   "kyc_decisions",
   "verification_checks",
   "risk_holds",
+  "refund_payouts",
   "refunds",
   "transactions",
   "feature_flags",
@@ -79,14 +79,34 @@ CREATE TABLE IF NOT EXISTS refunds (
   status TEXT NOT NULL CHECK (status IN ('pending', 'processed', 'rejected')),
   reason TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  processed_at TEXT
+  processed_at TEXT,
+  processed_by_role TEXT,
+  processing_note TEXT,
+  -- Amount actually paid out (<= amount_cents; less = partial refund). Set when processed.
+  approved_amount_cents INTEGER CHECK (approved_amount_cents IS NULL OR (approved_amount_cents > 0 AND approved_amount_cents <= amount_cents)),
+  -- Claim/assign: which operator is working the refund (coordination only; demo roles have no user identity).
+  assigned_to TEXT,
+  assigned_at TEXT
+);
+
+-- Simulated money movement for a processed refund. UNIQUE(refund_id) is the DB-level
+-- guarantee that a refund can never be paid out twice.
+CREATE TABLE IF NOT EXISTS refund_payouts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  refund_id TEXT NOT NULL UNIQUE REFERENCES refunds(id),
+  customer_id TEXT NOT NULL REFERENCES customers(id),
+  amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+  currency TEXT NOT NULL DEFAULT 'USD',
+  created_by_role TEXT NOT NULL,
+  created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS feature_flags (
   key TEXT PRIMARY KEY,
   enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
   description TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  updated_by_role TEXT
 );
 
 CREATE TABLE IF NOT EXISTS risk_holds (
@@ -115,4 +135,5 @@ CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_events (entity_type, entity
 CREATE INDEX IF NOT EXISTS idx_kyc_decisions_customer ON kyc_decisions (customer_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_customer ON transactions (customer_id);
 CREATE INDEX IF NOT EXISTS idx_refunds_customer ON refunds (customer_id);
+CREATE INDEX IF NOT EXISTS idx_refunds_transaction ON refunds (transaction_id);
 `;

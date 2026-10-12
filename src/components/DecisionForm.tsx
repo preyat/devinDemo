@@ -19,6 +19,10 @@ interface DecisionFormProps {
   options: DecisionOption[];
   noteLabel: string;
   notePlaceholder?: string;
+  /** id of the note textarea; set when several DecisionForms share a page. */
+  noteId?: string;
+  /** Extra inputs rendered above the note (e.g. an amount field or a selection list). */
+  extraFields?: ReactNode;
   /** Rendered above the buttons, e.g. why a decision is blocked. */
   notice?: ReactNode;
   /** When set, the record is read-only: show this instead of the form controls. */
@@ -29,7 +33,7 @@ interface DecisionFormProps {
  * Generic note + decision buttons form. Validation and rules live in the server action's service;
  * this component only renders the OperationResult.
  */
-export function DecisionForm({ action, fields, options, noteLabel, notePlaceholder, notice, readOnlyMessage }: DecisionFormProps) {
+export function DecisionForm({ action, fields, options, noteLabel, notePlaceholder, noteId = "decision-note", extraFields, notice, readOnlyMessage }: DecisionFormProps) {
   const [result, formAction, pending] = useActionState(action, null);
   return (
     <Form action={formAction}>
@@ -41,7 +45,8 @@ export function DecisionForm({ action, fields, options, noteLabel, notePlacehold
           {Object.entries(fields).map(([name, value]) => (
             <input key={name} type="hidden" name={name} value={value} />
           ))}
-          <Form.Group className="mb-2" controlId="decision-note">
+          {extraFields}
+          <Form.Group className="mb-2" controlId={noteId}>
             <Form.Label className="small">{noteLabel}</Form.Label>
             <Form.Control as="textarea" name="note" rows={2} maxLength={500} placeholder={notePlaceholder} />
           </Form.Group>

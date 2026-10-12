@@ -8,7 +8,7 @@
 Build or extend an internal tool in the Ops Portal (`preyat/devinDemo`), a local fintech prototype: Next.js 15 + React Bootstrap (Dashio-derived theme) + better-sqlite3 + Zod + Vitest, with synthetic data only. The goal is to follow the established architecture (backend business rules, permission checks, atomic state change + audit, shared UI components, deterministic seed), so that every tool looks and behaves like KYC Review and the codebase stays easy to extend.
 
 ## What's Needed From User
-- The tool to build or change, e.g. "Refunds + Feature Flags (Session 2)" or "Transaction Risk Review (Session 3)".
+- The tool to build or change, e.g. "Transaction Risk Review (Session 3)" (Refunds + Feature Flags shipped in Session 2).
 - Any business rules, roles and demo scenarios that must exist or be preserved.
 - Scope limits (time box, what is out of scope).
 

@@ -48,7 +48,7 @@ export function runAuditedOperation(op: AuditedOperation): OperationResult {
       ...base,
       outcome: "denied",
       message: err.message,
-      details: { code: err.code },
+      details: { code: err.code, ...err.details },
     });
     return { ok: false, code: err.code, message: err.message };
   }
