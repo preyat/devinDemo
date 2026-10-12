@@ -18,6 +18,11 @@ npm run new:workflow -- <slug> [--entity <type>] [--role <role>]   # scaffold a 
 
 CI (`.github/workflows/ci.yml`) runs `npm ci`, typecheck, lint, test and `db:reset` on every PR.
 
+## Playbook
+
+`docs/playbooks/ops-portal-tool.md` — end-to-end procedure for building a tool (source of truth for the Devin playbook
+`!ops_portal_tool`; keep both in sync).
+
 ## Skills (in `.agents/skills/`, auto-discovered — use them)
 
 | Skill | When |

@@ -28,6 +28,7 @@ List, from the conversation and `git log --oneline origin/main..HEAD` / `git dif
 | Seed realism or demo-scenario rule | `.agents/skills/add-seed-data/SKILL.md` + `tests/seed.test.ts` |
 | Workflow-building procedure change | `.agents/skills/build-internal-tool/SKILL.md` / `plan-internal-tool` |
 | Review criterion | `.agents/skills/review-internal-tool/SKILL.md` |
+| Session-kickoff procedure / PR report format | `docs/playbooks/ops-portal-tool.md` (then sync the Devin playbook `!ops_portal_tool`) |
 | Browser test hook/flow | `.agents/skills/browser-check/SKILL.md` + `scripts/smoke.mjs` |
 | Task-specific detail (PR numbers, dates, one-off instructions) | nowhere — leave it out |
 

@@ -33,7 +33,8 @@ npm run smoke      # browser smoke test (needs `npm run dev` running and Chrome)
 npm run new:workflow -- refunds --entity refund --role payments_operator   # scaffold a new tool
 ```
 
-Building a new tool? Start with [AGENTS.md](AGENTS.md) and the skills in `.agents/skills/`.
+Building a new tool? Follow [docs/playbooks/ops-portal-tool.md](docs/playbooks/ops-portal-tool.md)
+(Devin: start the session with `!ops_portal_tool`), plus [AGENTS.md](AGENTS.md) and the skills in `.agents/skills/`.
 
 ## Seed data
 
