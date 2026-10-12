@@ -1,44 +1,55 @@
 ---
 name: build-internal-tool
-description: Add a new workflow (e.g. Refunds, Feature Flags, Transaction Risk Review) to the Ops Portal by reusing the KYC Review patterns — shared components, server-side permission and business-rule checks, atomic state change + audit, Vitest tests, browser check and PR.
+description: Add a new workflow (e.g. Transaction Risk Review) to the Ops Portal by reusing the KYC/Refunds/Feature Flags patterns — shared components, server-side permission and business-rule checks, structured eligibility, atomic state change + audit, Vitest tests, browser smoke and PR.
 ---
 
 # Build an internal tool workflow
 
-Reference implementation: KYC Review. Copy its shape; do not invent new layers or a generic workflow engine.
+References: **KYC Review** (transition map + blockers), **Refunds** (ordered rule list + `canProcessRefund` with
+structured reasons, guarded money movement), **Feature Flags** (registry + Risk-Admin-only toggle read at decision time).
+Copy their shape; do not invent new layers or a generic workflow engine.
 
 ## Procedure
 
-1. **Orient** — read `AGENTS.md` (file map, data model, conventions, gotchas) and `docs/architecture.md`
-   ("KYC rules", "Adding another workflow"). Run `npm install && npm run db:reset && npm test` for a green baseline.
-2. **Study the reference slice**:
-   - rules + mutation: `src/server/kyc/service.ts` (`decideKyc`, `KYC_TRANSITIONS`, `allowedKycDecisions`, `getApprovalBlockers`)
-   - cross-workflow gate: `src/server/kyc/eligibility.ts` (`isKycRestricted` — Refunds must use it)
-   - atomic+audit wrapper: `src/server/operation.ts` (`runAuditedOperation`, `OperationResult`)
-   - queue reads: `src/server/lookups.ts` (`parseCustomerQuery`, `searchCustomers`, `getKycSummary`)
-   - action adapter `src/app/kyc/actions.ts`; form wrapper `src/app/kyc/KycDecisionForm.tsx`; page `src/app/kyc/page.tsx`
-   - tests: `tests/kyc.test.ts`, `tests/seed.test.ts`, `tests/eligibility.test.ts`, helper `tests/helpers.ts`
-3. **Server rules first**
-   - Add the permission to `PERMISSIONS` in `src/server/permissions.ts`.
-   - Add reads to `src/server/lookups.ts` (refund/transaction lookups exist; seed IDs in `src/server/seed.ts` `SEED_IDS`).
-   - Create `src/server/<workflow>/service.ts`: inside `runAuditedOperation({ execute })` do
-     `assertCan` → Zod `safeParse` → load row → transition map → business rules → guarded `UPDATE … WHERE id = ? AND status = ?`.
-     Throw `OperationError` (`validation|forbidden|not_found|invalid_transition|rule_violation`).
-     Export rule helpers (allowed actions, blocker reasons) so the page reuses them instead of duplicating logic.
-     Audit action: `<workflow>.<verb>`. Accept `now: Date = new Date()`.
-   - Schema/seed changes: `src/server/schema.ts` (bump `SCHEMA_VERSION`, update `TABLES`), `src/server/seed-data.ts` / `seed.ts`.
-     Keep seed deterministic and preserve the demo customers listed in `README.md`.
-4. **Tests** — `tests/<workflow>.test.ts` with `createTestDb()`: success + persisted state, each forbidden role,
-   invalid transition, rule violation, validation error, success/denied audit rows (`listAuditEvents`). Run `npm test`.
-5. **UI** — reuse `src/components/`: `PageHeader`, `SummaryCards`, `QueueFilters`, `QueueTable`, `QueuePagination`,
-   `RecordDetail`, `VerificationChecklist`, `StatusBadge`, `DecisionForm` (+ `OperationFeedback` inside it).
-   Thin `"use server"` action calling the service with `getDb()` + `getDemoRole()`, then `revalidatePath`.
-   Build row links with `withParams` (`src/lib/url.ts`). In server components use `CardHeader`/`CardBody`
-   (not `Card.Header`); pass icons only from client components. Set `available: true` (and an `icon`) in
-   `src/lib/workflows.ts` so the sidebar links it. Style with Bootstrap utilities; theme tokens live in `src/styles/`.
-6. **Verify** — `npm run typecheck && npm run lint && npm test`; `npm run db:reset && npm run dev`, then in the
-   browser exercise: allowed role success, rule-blocked action with explanation, forbidden role (switch the DEMO
-   role selector), audit trail rows, queue filters. Reset the DB afterwards.
-7. **Docs** — follow `.agents/skills/update-docs/SKILL.md` (AGENTS.md file map, architecture diagram, README).
-8. **PR** — branch `devin/<timestamp>-<slug>`, commit only source/docs (never `data/*.db`), open a PR listing
-   commands run + results, browser verification status, limitations and time spent.
+1. **Orient (≈10 min)** — `git pull --ff-only` on the base branch; read `AGENTS.md` (file map, conventions, gotchas)
+   and `docs/architecture.md`. `source ~/.nvm/nvm.sh && npm ci && npm run db:reset && npm test` → green baseline
+   (Session 2 baseline: 26 tests; after Session 2: 51). If the VM snapshot lacks `node_modules`, `npm ci` fixes it.
+2. **Resolve ambiguity in the request before coding**: name every rule, its reason code, error code and which role
+   may act. If the request contradicts itself, implement the narrow reading and say so in the PR.
+3. **Scaffold** — `npm run new:workflow -- <slug> --entity <type> --role <role>`. It is a stub: rename the
+   `<slug>.decide` permission to `<noun>.<verb>`, replace the decide form and delete the `it.todo` tests.
+4. **Server rules first** (`src/server/<workflow>/service.ts`)
+   - Reads → `src/server/lookups.ts` (`parse<X>Query` with `.catch()` defaults, `search<X>`, `get<X>`, summary).
+   - One rule → transition map + exported helper (KYC). Several rules → ordered `RULES` array
+     `{ code, label, errorCode, check }` + `can<Action>(db, role, id)` returning `{ eligible, checks, reasons, errorCode }`
+     (Refunds). Put the role check in the rule list so the page can show it, and order by error precedence.
+   - Mutation inside `runAuditedOperation`: Zod → `can<Action>` (throw `OperationError(errorCode, msg, { reasons })`)
+     → guarded `UPDATE … WHERE id = ? AND status = ?` (check `changes`) → history / money insert with a UNIQUE key
+     → return `{ message, details }`. Accept `now: Date = new Date()`.
+   - Reuse cross-workflow gates: `isKycRestricted`, `isFeatureEnabled`, existing `REFUND_RULES` (Session 3: add
+     `RISK_HOLD_ACTIVE` there, reading `risk_holds`). New flags go in `feature-flags/definitions.ts` with `blockCode`.
+   - Schema/seed: follow `add-seed-data` (bump `SCHEMA_VERSION`, update `TABLES`, restart `npm run dev`).
+     Preserve Maya, Samira, Jordan, Alex, Ben, David; add a seed test for every new scenario/invariant.
+5. **Tests** — `tests/<workflow>.test.ts` with `createTestDb()`: each reason code, success + persisted state,
+   repeat attempt, every forbidden role (`it.each`, incl. `null`), validation, not found, success/denied audit rows
+   with `details.reasons`, no mutation on denial, rollback when `audit_events` is dropped. Run `npm test`.
+6. **UI** — compose `PageHeader`, `SummaryCards`, `QueueFilters`, `QueueTable` (`getRowHref` + `withParams`),
+   `QueuePagination`, `RecordDetail`, `VerificationChecklist` (render `can<Action>().checks`), `StatusBadge`,
+   `DecisionForm` via a tiny client wrapper (`key` = record id). Pages call the service helpers — never re-derive a
+   rule. Keep the action button visible-but-annotated for wrong roles so the backend rejection is demonstrable.
+   `CardHeader`/`CardBody` in server components. Set `available: true` in `src/lib/workflows.ts`.
+7. **Verify** — `npm run typecheck && npm run lint && npm test`; architecture greps from `review-internal-tool`;
+   `npm run dev` + `SMOKE_CDP_URL=http://localhost:29229 npm run smoke` with new checks ordered as one story
+   (see `browser-check`). Capture screenshots outside the repo for the PR. `npm run db:reset` afterwards.
+8. **Docs** — `update-docs` + `capture-session-learnings` (README scenarios, AGENTS.md file map/conventions,
+   architecture diagram + rules table, this skill).
+9. **PR** — branch `devin/<timestamp>-<slug>`; never commit `data/*.db` or screenshots. PR body: modules reused /
+   new / existing services changed, rule table, commands + results, smoke output, screenshots, manual interventions,
+   limitations, time spent.
+
+## Measured lessons (Sessions 1–2)
+
+- Session 2 implementation (two workflows, 25 new tests, 4 smoke checks, docs) took ~1 session; most time went to
+  rules/tests, not UI, because shared components covered every screen.
+- The only smoke failure was a remounting form `key` that hid the success alert — check feedback after every mutation.
+- Moving `statusLabel` to `src/lib/labels.ts` let services format messages without importing a component.

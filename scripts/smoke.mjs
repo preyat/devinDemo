@@ -51,6 +51,42 @@ const checks = [
     },
   },
   {
+    name: "Feature Flags: Payments Operator rejected, Risk Admin turns block_refunds_unverified_kyc ON",
+    async run(page) {
+      await setRole(page, "payments_operator");
+      await page.goto(`${BASE}/feature-flags?flag=block_refunds_unverified_kyc`);
+      assert.match(await page.textContent("[data-testid=role-notice]"), /Risk Admin/);
+      assert.match(await decide(page, "enable", "attempt"), /forbidden/);
+      await setRole(page, "risk_admin");
+      await page.goto(`${BASE}/feature-flags?flag=block_refunds_unverified_kyc`);
+      assert.match(await decide(page, "enable", "Enforce KYC before refunds."), /turned ON/);
+      await page.reload();
+      assert.match(await page.textContent("[data-testid=flag-impact]"), /ref_maya_750/);
+    },
+  },
+  {
+    name: "Refunds: flag ON blocks Maya (KYC_NOT_APPROVED); flag OFF lifts it; flag back ON",
+    async run(page) {
+      await setRole(page, "payments_operator");
+      await page.goto(`${BASE}/refunds`);
+      assert.match(await page.textContent("[data-testid=blocked-ref_maya_750]"), /KYC_NOT_APPROVED/);
+      await page.locator("[data-testid=row-ref_maya_750] td").first().click();
+      await page.waitForURL(/refund=ref_maya_750/);
+      assert.match(await page.textContent("[data-testid=eligibility]"), /refunds are blocked for unverified customers/);
+      assert.match(await decide(page, "process", "Trying anyway"), /rule_violation.*KYC_NOT_APPROVED/);
+      await page.reload();
+      assert.equal(await page.locator("[data-testid=read-only]").count(), 0);
+
+      await setRole(page, "risk_admin");
+      await page.goto(`${BASE}/feature-flags?flag=block_refunds_unverified_kyc`);
+      assert.match(await decide(page, "disable", "Temporarily lift for testing."), /turned OFF/);
+      await page.goto(`${BASE}/refunds`);
+      assert.equal(await page.locator("[data-testid=blocked-ref_maya_750]").count(), 0);
+      await page.goto(`${BASE}/feature-flags?flag=block_refunds_unverified_kyc`);
+      assert.match(await decide(page, "enable", "Re-enable."), /turned ON/);
+    },
+  },
+  {
     name: "KYC: Maya needs a note, then approves and becomes read-only",
     async run(page) {
       await setRole(page, "kyc_reviewer");
@@ -80,6 +116,39 @@ const checks = [
       await setRole(page, "payments_operator");
       await page.goto(`${BASE}/kyc?customer=cus_hannah_schmidt`);
       assert.match(await decide(page, "approve", "attempt"), /forbidden/);
+      await setRole(page, "kyc_reviewer");
+    },
+  },
+  {
+    name: "Refunds: approved Maya is eligible, processes once; a stale second submit gets ALREADY_REFUNDED",
+    async run(page) {
+      await setRole(page, "payments_operator");
+      const url = `${BASE}/refunds?refund=ref_maya_750`;
+      await page.goto(url);
+      assert.equal(await page.locator("[data-testid=blocked-notice]").count(), 0);
+      const stale = await page.context().newPage();
+      await stale.goto(url);
+      assert.match(await decide(page, "process", "Refund to original card."), /Refund ref_maya_750 of \$750\.00 processed/);
+      assert.match(await decide(stale, "process", "Double submit"), /invalid_transition.*ALREADY_REFUNDED/);
+      await stale.close();
+      await page.goto(`${BASE}/refunds?status=processed&refund=ref_maya_750`);
+      assert.match(await page.textContent("[data-testid=read-only]"), /read-only/);
+      assert.equal(await page.locator("[data-testid=row-ref_maya_750]").count(), 1);
+    },
+  },
+  {
+    name: "Refunds: Jordan's processed refund is read-only; KYC Reviewer is forbidden by the backend",
+    async run(page) {
+      await setRole(page, "payments_operator");
+      await page.goto(`${BASE}/refunds?status=processed`);
+      await page.locator("[data-testid=row-ref_jordan_420] td").first().click();
+      await page.waitForURL(/refund=ref_jordan_420/);
+      assert.match(await page.textContent("[data-testid=eligibility]"), /already processed/);
+      assert.match(await page.textContent("[data-testid=read-only]"), /read-only/);
+      await setRole(page, "kyc_reviewer");
+      await page.goto(`${BASE}/refunds?refund=ref_alex_350`);
+      assert.match(await page.textContent("[data-testid=role-notice]"), /refund\.process/);
+      assert.match(await decide(page, "process", "attempt"), /forbidden.*ROLE_NOT_PERMITTED/);
       await setRole(page, "kyc_reviewer");
     },
   },

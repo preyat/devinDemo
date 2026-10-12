@@ -4,6 +4,8 @@ import { ROLE_LABELS, type Role } from "./roles";
 // Server-side policy: which roles may perform each permission.
 // Add a permission here when adding a new mutating workflow.
 export const PERMISSIONS = {
+  "refund.process": ["payments_operator"],
+  "feature_flag.toggle": ["risk_admin"],
   "kyc.decide": ["kyc_reviewer"],
 } as const satisfies Record<string, readonly Role[]>;
 
