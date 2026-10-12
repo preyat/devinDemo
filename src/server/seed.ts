@@ -1,5 +1,7 @@
 import type Database from "better-sqlite3";
 import { FEATURE_FLAGS } from "./feature-flags/definitions";
+import { decideFraudAlert } from "./fraud/service";
+import { FRAUD_SEED_CASES } from "./fraud/seed-data";
 import { SEED_CUSTOMERS, type SeedCustomer, type SeedDecision } from "./seed-data";
 
 // Fixed "now" for the dataset: every timestamp is derived from it, so resets are byte-identical.
@@ -19,6 +21,10 @@ export const SEED_IDS = {
   liam: "cus_liam_o_connor",
   ben: "cus_ben_carter",
   david: "cus_david_cohen",
+  jamie: "cus_jamie_patel",
+  mayaChen: "cus_maya_chen",
+  sam: "cus_sam_taylor",
+  priyaShah: "cus_priya_shah",
 } as const;
 
 const PROCESSED_NOTE = "Refund issued to original payment method.";
@@ -257,6 +263,33 @@ export function seedDatabase(db: Database.Database): void {
 
     const insertFlag = db.prepare(`INSERT INTO feature_flags (key, enabled, description, updated_at, updated_by_role) VALUES (?, ?, ?, ?, NULL)`);
     for (const f of FEATURE_FLAGS) insertFlag.run(f.key, f.seedEnabled ? 1 : 0, f.description, SEED_TIMESTAMP);
-    // risk_holds and audit_events intentionally start empty.
+
+    // Fraud Operations: alerts from the simulated monitoring system, linked to real customers/transactions.
+    const insertAlert = db.prepare(
+      `INSERT INTO fraud_alerts (id, customer_id, transaction_id, severity, status, scenario, reason, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?)`,
+    );
+    const insertSignal = db.prepare(`INSERT INTO fraud_signals (alert_id, code, label, detail, source) VALUES (?, ?, ?, ?, 'simulated')`);
+    const insertAlertDecision = db.prepare(
+      `INSERT INTO fraud_alert_decisions (alert_id, decision, from_status, to_status, note, decided_by_role, decided_at) VALUES (?, 'open', NULL, 'open', ?, 'system', ?)`,
+    );
+    for (const f of FRAUD_SEED_CASES) {
+      for (const t of f.transactions ?? []) insertTxn.run(t.id, f.customerId, t.amountCents, t.description, "completed", at(t.daysAgo, t.hour ?? 0));
+      for (const r of f.refunds ?? []) {
+        insertRefund(r.id, f.customerId, r.transactionId, r.amountCents, r.status, r.reason, at(r.daysAgo), r.processedDaysAgo === undefined ? null : at(r.processedDaysAgo));
+      }
+      const createdAt = at(f.createdDaysAgo, f.createdHour);
+      insertAlert.run(f.alertId, f.customerId, f.transactionId, f.severity, f.scenario, f.reason, createdAt, createdAt);
+      for (const sig of f.signals) insertSignal.run(f.alertId, sig.code, sig.label, sig.detail);
+      insertAlertDecision.run(f.alertId, `Raised by simulated fraud monitoring: ${f.scenario}.`, createdAt);
+      if (f.escalation) {
+        // Escalate through the real service so the hold, decision row and audit event match live behaviour.
+        const res = decideFraudAlert(db, "risk_admin", { alertId: f.alertId, decision: "escalate", note: f.escalation.note }, new Date(at(f.escalation.daysAgo, f.escalation.hour)));
+        if (!res.ok) throw new Error(`Seed escalation of ${f.alertId} failed: ${res.message}`);
+      }
+    }
+
+    // Marks this database as the designated demo database (checked by demo:reset).
+    db.prepare(`INSERT INTO portal_meta (key, value) VALUES ('environment', 'demo'), ('seeded_at', ?)`).run(SEED_TIMESTAMP);
   })();
 }

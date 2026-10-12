@@ -132,7 +132,7 @@ describe("KYC decisions", () => {
     decideKyc(db, "kyc_reviewer", approve(SEED_IDS.samira), NOW);
     decideKyc(db, "kyc_reviewer", approve(SEED_IDS.maya), NOW);
 
-    expect(listAuditEvents(db).map((e) => [e.entityId, e.action, e.outcome, e.details?.code ?? null])).toEqual([
+    expect(listAuditEvents(db).filter((e) => e.action.startsWith("kyc.")).map((e) => [e.entityId, e.action, e.outcome, e.details?.code ?? null])).toEqual([
       [SEED_IDS.maya, "kyc.approve", "success", null],
       [SEED_IDS.samira, "kyc.approve", "denied", "rule_violation"],
       [SEED_IDS.maya, "kyc.approve", "denied", "forbidden"],

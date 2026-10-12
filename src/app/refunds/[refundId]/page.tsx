@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Card, CardBody, CardHeader, Col, Row } from "react-bootstrap";
+import { Alert, Card, CardBody, CardHeader, Col, Row } from "react-bootstrap";
 import { QueueTable } from "@/components/QueueTable";
 import { RecordFields } from "@/components/RecordDetail";
 import { RecordNav } from "@/components/RecordNav";
@@ -42,6 +42,7 @@ export default async function RefundCasePage({
   const siblings = listRefundsForTransaction(db, r.transactionId).filter((s) => s.id !== r.id);
   const payouts = listPayoutsForRefund(db, r.id);
   const blockers = businessBlockers(eligibility);
+  const riskHold = eligibility.reasons.find((reason) => reason.code === "ACCOUNT_RISK_HOLD");
 
   const overview = (
     <Row className="g-4">
@@ -160,6 +161,11 @@ export default async function RefundCasePage({
         total={nav.total}
         noun="refund"
       />
+      {r.status === "pending" && riskHold && (
+        <Alert variant="danger" className="py-2" data-testid="risk-hold-banner">
+          {riskHold.message} <Link href={`/fraud?q=${r.customerId}&status=all`}>View in Fraud Operations</Link>
+        </Alert>
+      )}
       <Card data-testid="refund-details">
         <CardHeader className="py-3">
           <div className="small text-uppercase text-muted fw-semibold mb-1">Refund · <code>{r.id}</code></div>

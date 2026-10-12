@@ -23,6 +23,9 @@ const VARIANTS: Record<string, string> = {
   denied: "danger",
   failed: "danger",
   active: "danger",
+  open: "primary",
+  escalated: "danger",
+  dismissed: "secondary",
   released: "secondary",
 };
 
@@ -31,6 +34,7 @@ const SUBTLE: Record<string, string> = {
   onboarding: "primary",
   periodic_refresh: "secondary",
   triggered: "warning",
+  simulated: "info",
 };
 
 export { statusLabel };
