@@ -6,6 +6,20 @@ export interface DetailField {
   value: ReactNode;
 }
 
+/** Label/value list (usable on its own, e.g. inside tabs). */
+export function RecordFields({ fields }: { fields: DetailField[] }) {
+  return (
+    <dl className="row g-0 mb-0 small">
+      {fields.map((f) => (
+        <div key={f.label} className="contents">
+          <dt className="col-sm-4 text-muted fw-normal">{f.label}</dt>
+          <dd className="col-sm-8">{f.value ?? "—"}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 export function RecordDetail({ title, fields, children }: { title: ReactNode; fields: DetailField[]; children?: ReactNode }) {
   return (
     <Card>
@@ -13,14 +27,7 @@ export function RecordDetail({ title, fields, children }: { title: ReactNode; fi
         {title}
       </CardHeader>
       <CardBody>
-        <dl className="row mb-0">
-          {fields.map((f) => (
-            <div key={f.label} className="contents">
-              <dt className="col-sm-5 text-muted fw-normal">{f.label}</dt>
-              <dd className="col-sm-7">{f.value ?? "—"}</dd>
-            </div>
-          ))}
-        </dl>
+        <RecordFields fields={fields} />
         {children}
       </CardBody>
     </Card>
