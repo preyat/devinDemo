@@ -18,7 +18,9 @@ Docs must describe what the code does **now**. Verify against files, not memory.
 4. **README.md** — keep it short: what it does, run steps, a 3–4 line quick demo, list of shipped workflows
    (move items out of "Planned" when they ship). Every command must work as written.
    **docs/demo.md** — reviewer walkthroughs (role → URL → button → expected result), seed scenario tables, reset
-   guard; update when seed data, UI labels or messages change.
+   guard; update when seed data, UI labels or messages change. Spell out every required input (most actions need a note)
+   and click through each walkthrough in the UI from a fresh `demo:reset` — smoke can do things a reviewer can't
+   (e.g. stale resubmits).
 5. **Skills** — if a procedure changed, update the matching skill in `.agents/skills/` and the skills table in AGENTS.md.
    For session-level context (decisions, corrections, gotchas) use `.agents/skills/capture-session-learnings/SKILL.md`.
 6. Check every referenced path exists (templated `<workflow>` paths are skipped):
