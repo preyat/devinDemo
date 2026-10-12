@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { SCHEMA_SQL } from "./schema";
+import { SCHEMA_SQL, SCHEMA_VERSION, TABLES } from "./schema";
 import { seedDatabase } from "./seed";
 
 export type Db = Database.Database;
@@ -16,29 +16,29 @@ export function openDb(filename: string): Db {
   const db = new Database(filename);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
-  db.exec(SCHEMA_SQL);
+  if (db.pragma("user_version", { simple: true }) === SCHEMA_VERSION) db.exec(SCHEMA_SQL);
   return db;
 }
 
-/** Drop all data and re-seed. Used by `npm run db:reset` and tests. */
+/** Drop every table, recreate the schema and re-seed. Used by `npm run db:reset`, tests and stale DBs. */
 export function resetDb(db: Db): void {
+  db.pragma("foreign_keys = OFF");
   db.transaction(() => {
-    for (const table of ["audit_events", "risk_holds", "refunds", "transactions", "feature_flags", "customers"]) {
-      db.prepare(`DELETE FROM ${table}`).run();
-    }
-    db.prepare(`DELETE FROM sqlite_sequence WHERE name = 'audit_events'`).run();
+    for (const table of TABLES) db.exec(`DROP TABLE IF EXISTS ${table}`);
+    db.exec(SCHEMA_SQL);
+    db.pragma(`user_version = ${SCHEMA_VERSION}`);
+    seedDatabase(db);
   })();
-  seedDatabase(db);
+  db.pragma("foreign_keys = ON");
 }
 
 const globalForDb = globalThis as unknown as { portalDb?: Db };
 
-/** Shared app connection (survives Next.js dev HMR). Seeds automatically on first run. */
+/** Shared app connection (survives Next.js dev HMR). Seeds a new or out-of-date DB automatically. */
 export function getDb(): Db {
   if (!globalForDb.portalDb) {
     const db = openDb(defaultDbPath());
-    const { count } = db.prepare("SELECT COUNT(*) AS count FROM customers").get() as { count: number };
-    if (count === 0) seedDatabase(db);
+    if (db.pragma("user_version", { simple: true }) !== SCHEMA_VERSION) resetDb(db);
     globalForDb.portalDb = db;
   }
   return globalForDb.portalDb;

@@ -1,45 +1,120 @@
-import { Card, CardBody, CardHeader, Col, Row } from "react-bootstrap";
+import { Alert, Card, CardBody, CardHeader, Col, Row } from "react-bootstrap";
 import { PageHeader } from "@/components/PageHeader";
+import { QueueFilters, type FilterSelect } from "@/components/QueueFilters";
+import { QueuePagination } from "@/components/QueuePagination";
 import { QueueTable } from "@/components/QueueTable";
 import { RecordDetail } from "@/components/RecordDetail";
-import { StatusBadge } from "@/components/StatusBadge";
+import { StatusBadge, statusLabel } from "@/components/StatusBadge";
+import { SummaryCards } from "@/components/SummaryCards";
+import { VerificationChecklist } from "@/components/VerificationChecklist";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import { getDemoRole } from "@/lib/session";
+import { withParams, type SearchParams } from "@/lib/url";
 import { listAuditEvents } from "@/server/audit";
 import { getDb } from "@/server/db";
-import { getCustomer, listCustomers, listRefundsForCustomer, listTransactionsForCustomer } from "@/server/lookups";
+import { allowedKycDecisions, formatApprovalBlockers, getApprovalBlockers } from "@/server/kyc/service";
+import {
+  getCustomer,
+  getKycSummary,
+  listKycDecisions,
+  listRefundsForCustomer,
+  listTransactionsForCustomer,
+  listVerificationChecks,
+  PAGE_SIZES,
+  parseCustomerQuery,
+  searchCustomers,
+  type CheckType,
+} from "@/server/lookups";
 import { can } from "@/server/permissions";
 import { KycDecisionForm } from "./KycDecisionForm";
 
 export const dynamic = "force-dynamic";
 
-export default async function KycPage({ searchParams }: { searchParams: Promise<{ customer?: string }> }) {
-  const { customer: selectedId } = await searchParams;
+const CHECK_LABELS: Record<CheckType, string> = {
+  identity: "Identity verification",
+  address: "Address verification",
+  sanctions: "Sanctions screening",
+  pep: "PEP screening",
+};
+
+const FILTERS: FilterSelect[] = [
+  {
+    name: "status",
+    label: "KYC status",
+    options: [
+      { value: "all", label: "All statuses" },
+      { value: "open", label: "Open (pending + awaiting info)" },
+      { value: "pending", label: "Pending review" },
+      { value: "info_requested", label: "Awaiting info" },
+      { value: "approved", label: "Approved" },
+      { value: "rejected", label: "Rejected" },
+    ],
+  },
+  {
+    name: "risk",
+    label: "Risk",
+    options: [
+      { value: "all", label: "All risk levels" },
+      { value: "high", label: "High" },
+      { value: "medium", label: "Medium" },
+      { value: "low", label: "Low" },
+    ],
+  },
+  {
+    name: "sort",
+    label: "Sort",
+    options: [
+      { value: "applied_desc", label: "Newest applications" },
+      { value: "applied_asc", label: "Oldest applications" },
+      { value: "updated_desc", label: "Recently updated" },
+    ],
+  },
+  { name: "pageSize", label: "Page size", options: PAGE_SIZES.map((n) => ({ value: String(n), label: `${n} per page` })) },
+];
+
+export default async function KycPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  const params = await searchParams;
+  const selectedId = typeof params.customer === "string" ? params.customer : undefined;
   const db = getDb();
   const role = await getDemoRole();
-  const customers = listCustomers(db);
+  const query = parseCustomerQuery(params);
+  const { rows, total, page } = searchCustomers(db, query);
+  const summary = getKycSummary(db);
   const selected = selectedId ? getCustomer(db, selectedId) : null;
 
   return (
     <>
       <PageHeader title="KYC Review" description="Review synthetic customer identity checks. Only KYC Reviewers may decide." />
+      <SummaryCards
+        items={[
+          { label: "Pending review", value: summary.pending, variant: "warning" },
+          { label: "Awaiting information", value: summary.infoRequested, variant: "info" },
+          { label: "High risk open cases", value: summary.highRiskOpen, variant: "danger" },
+          { label: "Total customers", value: summary.total },
+        ]}
+      />
       <Row className="g-3">
         <Col lg={6}>
           <Card>
             <CardHeader as="h2" className="h6 mb-0">Customer queue</CardHeader>
             <CardBody>
+              <QueueFilters searchPlaceholder="Name or customer ID" selects={FILTERS} />
               <QueueTable
-                rows={customers}
+                rows={rows}
                 getRowKey={(c) => c.id}
-                getRowHref={(c) => `/kyc?customer=${c.id}`}
+                getRowHref={(c) => withParams("/kyc", params, { customer: c.id })}
                 selectedKey={selected?.id}
+                emptyText="No customers match these filters."
                 columns={[
                   { header: "Customer", render: (c) => c.name },
                   { header: "Country", render: (c) => c.country },
                   { header: "KYC status", render: (c) => <StatusBadge status={c.kycStatus} /> },
-                  { header: "Decided", render: (c) => formatDateTime(c.kycDecidedAt) },
+                  { header: "Risk", render: (c) => <StatusBadge status={c.riskLevel} /> },
+                  { header: "Applied", render: (c) => c.appliedAt.slice(0, 10) },
+                  { header: "Updated", render: (c) => c.updatedAt.slice(0, 10) },
                 ]}
               />
+              <QueuePagination page={page} pageSize={query.pageSize} total={total} />
             </CardBody>
           </Card>
         </Col>
@@ -49,61 +124,149 @@ export default async function KycPage({ searchParams }: { searchParams: Promise<
               {selectedId ? `Customer ${selectedId} not found.` : "Select a customer to review."}
             </Card>
           ) : (
-            <>
-              <RecordDetail
-                title={selected.name}
-                fields={[
-                  { label: "Customer ID", value: <code>{selected.id}</code> },
-                  { label: "KYC status", value: <StatusBadge status={selected.kycStatus} /> },
-                  { label: "Email", value: selected.email },
-                  { label: "Country", value: selected.country },
-                  { label: "Date of birth", value: selected.dateOfBirth },
-                  { label: "Document", value: `${selected.documentType} •••• ${selected.documentLast4}` },
-                  { label: "Decided by", value: selected.kycDecidedByRole },
-                  { label: "Decision note", value: selected.kycDecisionNote },
-                  {
-                    label: "Transactions",
-                    value: listTransactionsForCustomer(db, selected.id)
-                      .map((t) => `${formatMoney(t.amountCents)} ${t.description}`)
-                      .join("; "),
-                  },
-                  {
-                    label: "Refunds",
-                    value: listRefundsForCustomer(db, selected.id)
-                      .map((r) => `${formatMoney(r.amountCents)} (${r.status})`)
-                      .join("; "),
-                  },
-                ]}
-              >
-                <hr />
-                <KycDecisionForm
-                  key={selected.id}
-                  customerId={selected.id}
-                  status={selected.kycStatus}
-                  canDecide={can(role, "kyc.decide")}
-                />
-              </RecordDetail>
-              <Card className="mt-3">
-                <CardHeader as="h2" className="h6 mb-0">Audit trail</CardHeader>
-                <CardBody>
-                  <QueueTable
-                    rows={listAuditEvents(db, { entityType: "customer", entityId: selected.id, limit: 20 })}
-                    getRowKey={(e) => String(e.id)}
-                    emptyText="No audit events yet."
-                    columns={[
-                      { header: "When", render: (e) => formatDateTime(e.occurredAt) },
-                      { header: "Role", render: (e) => e.actorRole ?? "—" },
-                      { header: "Action", render: (e) => <code>{e.action}</code> },
-                      { header: "Outcome", render: (e) => <StatusBadge status={e.outcome} /> },
-                      { header: "Message", render: (e) => e.message },
-                    ]}
-                  />
-                </CardBody>
-              </Card>
-            </>
+            <CustomerCase customerId={selected.id} canDecide={can(role, "kyc.decide")} />
           )}
         </Col>
       </Row>
     </>
+  );
+}
+
+function CustomerCase({ customerId, canDecide }: { customerId: string; canDecide: boolean }) {
+  const db = getDb();
+  const c = getCustomer(db, customerId)!;
+  const checks = listVerificationChecks(db, c.id);
+  const decisions = listKycDecisions(db, c.id);
+  const blockers = getApprovalBlockers(checks);
+  const openInfoRequest = c.kycStatus === "info_requested" ? decisions.find((d) => d.decision === "request_info") : undefined;
+  const transactions = listTransactionsForCustomer(db, c.id);
+  const refunds = listRefundsForCustomer(db, c.id);
+
+  return (
+    <div className="d-grid gap-3">
+      <RecordDetail
+        title={
+          <span className="d-flex justify-content-between align-items-center">
+            <span>{c.name}</span>
+            <span className="d-flex gap-1">
+              <StatusBadge status={c.kycStatus} />
+              <StatusBadge status={c.riskLevel} label={`${statusLabel(c.riskLevel)} risk`} />
+            </span>
+          </span>
+        }
+        fields={[
+          { label: "Customer ID", value: <code>{c.id}</code> },
+          { label: "Account", value: `${statusLabel(c.accountType)} · ${c.accountRef}` },
+          { label: "Email", value: c.email },
+          { label: "Location", value: `${c.city}, ${c.country}` },
+          { label: "Date of birth", value: c.dateOfBirth },
+          { label: "Document", value: `${c.documentType} ${c.documentRef} (expires ${c.documentExpiry})` },
+          { label: "Applied", value: formatDateTime(c.appliedAt) },
+          { label: "Last updated", value: formatDateTime(c.updatedAt) },
+        ]}
+      >
+        <div className="border-top pt-2 mt-2 small" data-testid="risk-summary">
+          <span className="fw-semibold">Risk classification: </span>
+          <StatusBadge status={c.riskLevel} /> <span className="text-muted">{c.riskReason}</span>
+        </div>
+        {openInfoRequest && (
+          <Alert variant="info" className="py-2 small mt-3 mb-0" data-testid="info-requested">
+            <strong>Awaiting information from customer</strong> (requested {formatDateTime(openInfoRequest.decidedAt)}):{" "}
+            {openInfoRequest.note}
+          </Alert>
+        )}
+      </RecordDetail>
+
+      <Card>
+        <CardHeader as="h2" className="h6 mb-0">Verification</CardHeader>
+        <CardBody className="py-1">
+          <VerificationChecklist items={checks.map((ch) => ({ label: CHECK_LABELS[ch.checkType], status: ch.result, detail: ch.detail }))} />
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader as="h2" className="h6 mb-0">Decision</CardHeader>
+        <CardBody>
+          <KycDecisionForm
+            key={c.id}
+            customerId={c.id}
+            allowed={allowedKycDecisions(c.kycStatus)}
+            approvalBlockedReason={blockers.length ? formatApprovalBlockers(blockers) : null}
+            canDecide={canDecide}
+            finalStatusLabel={statusLabel(c.kycStatus).toLowerCase()}
+          />
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader as="h2" className="h6 mb-0">Decision history</CardHeader>
+        <CardBody>
+          <QueueTable
+            rows={decisions}
+            getRowKey={(d) => String(d.id)}
+            emptyText="No decisions yet."
+            columns={[
+              { header: "When", render: (d) => formatDateTime(d.decidedAt) },
+              { header: "Decision", render: (d) => <StatusBadge status={d.toStatus} label={statusLabel(d.decision)} /> },
+              { header: "By", render: (d) => d.decidedByRole },
+              { header: "Note", render: (d) => d.note },
+            ]}
+          />
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader as="h2" className="h6 mb-0">Transactions ({transactions.length})</CardHeader>
+        <CardBody>
+          <QueueTable
+            rows={transactions}
+            getRowKey={(t) => t.id}
+            emptyText="No transactions."
+            columns={[
+              { header: "Date", render: (t) => t.createdAt.slice(0, 10) },
+              { header: "Description", render: (t) => t.description },
+              { header: "Amount", render: (t) => formatMoney(t.amountCents, t.currency) },
+              { header: "Status", render: (t) => <StatusBadge status={t.status} /> },
+            ]}
+          />
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader as="h2" className="h6 mb-0">Refunds ({refunds.length})</CardHeader>
+        <CardBody>
+          <QueueTable
+            rows={refunds}
+            getRowKey={(r) => r.id}
+            emptyText="No refunds."
+            columns={[
+              { header: "Date", render: (r) => r.createdAt.slice(0, 10) },
+              { header: "Transaction", render: (r) => <code>{r.transactionId}</code> },
+              { header: "Amount", render: (r) => formatMoney(r.amountCents, r.currency) },
+              { header: "Status", render: (r) => <StatusBadge status={r.status} /> },
+              { header: "Reason", render: (r) => r.reason },
+            ]}
+          />
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader as="h2" className="h6 mb-0">Audit trail</CardHeader>
+        <CardBody>
+          <QueueTable
+            rows={listAuditEvents(db, { entityType: "customer", entityId: c.id, limit: 20 })}
+            getRowKey={(e) => String(e.id)}
+            emptyText="No audit events yet."
+            columns={[
+              { header: "When", render: (e) => formatDateTime(e.occurredAt) },
+              { header: "Role", render: (e) => e.actorRole ?? "—" },
+              { header: "Action", render: (e) => <code>{e.action}</code> },
+              { header: "Outcome", render: (e) => <StatusBadge status={e.outcome} /> },
+              { header: "Message", render: (e) => e.message },
+            ]}
+          />
+        </CardBody>
+      </Card>
+    </div>
   );
 }

@@ -1,47 +1,50 @@
 "use client";
 
-import { useActionState } from "react";
-import { Button, Form } from "react-bootstrap";
-import { Check, X } from "lucide-react";
-import { OperationFeedback } from "@/components/OperationFeedback";
-import type { KycStatus } from "@/server/lookups";
+import { Alert } from "react-bootstrap";
+import { Check, MessageSquareMore, X } from "lucide-react";
+import { DecisionForm, type DecisionOption } from "@/components/DecisionForm";
+import type { KycDecision } from "@/server/kyc/service";
 import { decideKycAction } from "./actions";
+
+const OPTIONS: Record<KycDecision, DecisionOption> = {
+  approve: { value: "approve", label: "Approve", variant: "success", icon: <Check size={16} /> },
+  request_info: { value: "request_info", label: "Request more information", variant: "outline-primary", icon: <MessageSquareMore size={16} /> },
+  reject: { value: "reject", label: "Reject", variant: "outline-danger", icon: <X size={16} /> },
+};
 
 interface Props {
   customerId: string;
-  status: KycStatus;
+  /** From allowedKycDecisions(status) — empty means the case is final. */
+  allowed: KycDecision[];
+  /** From formatApprovalBlockers(getApprovalBlockers(checks)), or null when approval is allowed. */
+  approvalBlockedReason: string | null;
   canDecide: boolean;
+  finalStatusLabel: string;
 }
 
-export function KycDecisionForm({ customerId, status, canDecide }: Props) {
-  const [result, formAction, pending] = useActionState(decideKycAction, null);
+export function KycDecisionForm({ customerId, allowed, approvalBlockedReason, canDecide, finalStatusLabel }: Props) {
   return (
-    <Form action={formAction}>
-      <OperationFeedback result={result} />
-      {status !== "pending" ? (
-        <p className="small text-muted mb-0">KYC decision is final ({status}).</p>
-      ) : (
+    <DecisionForm
+      action={decideKycAction}
+      fields={{ customerId }}
+      options={allowed.map((d) => OPTIONS[d])}
+      noteLabel="Decision note (required). For information requests, state what the customer must provide."
+      notePlaceholder="e.g. Passport and utility bill verified / Provide a bank statement dated within 3 months"
+      readOnlyMessage={allowed.length === 0 ? `Case is closed (${finalStatusLabel}) and read-only.` : undefined}
+      notice={
         <>
-          <input type="hidden" name="customerId" value={customerId} />
-          <Form.Group className="mb-2" controlId="kyc-note">
-            <Form.Label className="small">Decision note (required to reject)</Form.Label>
-            <Form.Control as="textarea" name="note" rows={2} maxLength={500} />
-          </Form.Group>
+          {approvalBlockedReason && allowed.includes("approve") && (
+            <Alert variant="warning" className="py-2 small" data-testid="approval-blocked">
+              {approvalBlockedReason}
+            </Alert>
+          )}
           {!canDecide && (
             <p className="small text-muted mb-2">
               Your demo role lacks <code>kyc.decide</code>; the server will reject these actions.
             </p>
           )}
-          <div className="d-flex gap-2">
-            <Button type="submit" name="decision" value="approve" variant="success" size="sm" disabled={pending}>
-              <Check size={16} /> Approve
-            </Button>
-            <Button type="submit" name="decision" value="reject" variant="outline-danger" size="sm" disabled={pending}>
-              <X size={16} /> Reject
-            </Button>
-          </div>
         </>
-      )}
-    </Form>
+      }
+    />
   );
 }
