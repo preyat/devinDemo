@@ -2,7 +2,7 @@
 // Bump SCHEMA_VERSION whenever this changes: getDb() rebuilds + reseeds stale local DBs.
 // Tables for refunds, feature_flags and risk_holds exist now so later workflows
 // (Refunds, Feature Flags, Transaction Risk Review) can build on stable data.
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 // Drop order respects foreign keys.
 export const TABLES = [
@@ -32,6 +32,10 @@ CREATE TABLE IF NOT EXISTS customers (
   kyc_status TEXT NOT NULL CHECK (kyc_status IN ('pending', 'info_requested', 'approved', 'rejected')),
   risk_level TEXT NOT NULL CHECK (risk_level IN ('low', 'medium', 'high')),
   risk_reason TEXT NOT NULL,
+  -- Why the KYC case exists: a new application, or a re-review of an existing customer.
+  review_type TEXT NOT NULL CHECK (review_type IN ('onboarding', 'periodic_refresh', 'triggered')),
+  review_reason TEXT NOT NULL,
+  review_opened_at TEXT NOT NULL,
   applied_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -48,7 +52,7 @@ CREATE TABLE IF NOT EXISTS verification_checks (
 CREATE TABLE IF NOT EXISTS kyc_decisions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   customer_id TEXT NOT NULL REFERENCES customers(id),
-  decision TEXT NOT NULL CHECK (decision IN ('approve', 'reject', 'request_info')),
+  decision TEXT NOT NULL CHECK (decision IN ('approve', 'reject', 'request_info', 'open_review')),
   from_status TEXT NOT NULL,
   to_status TEXT NOT NULL,
   note TEXT NOT NULL,

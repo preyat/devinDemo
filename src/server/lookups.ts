@@ -5,6 +5,8 @@ export const KYC_STATUSES = ["pending", "info_requested", "approved", "rejected"
 export type KycStatus = (typeof KYC_STATUSES)[number];
 export const RISK_LEVELS = ["low", "medium", "high"] as const;
 export type RiskLevel = (typeof RISK_LEVELS)[number];
+export const REVIEW_TYPES = ["onboarding", "periodic_refresh", "triggered"] as const;
+export type ReviewType = (typeof REVIEW_TYPES)[number];
 export type CheckType = "identity" | "address" | "sanctions" | "pep";
 export type CheckResult = "passed" | "missing" | "failed" | "clear" | "review_required";
 
@@ -23,6 +25,9 @@ export interface Customer {
   kycStatus: KycStatus;
   riskLevel: RiskLevel;
   riskReason: string;
+  reviewType: ReviewType;
+  reviewReason: string;
+  reviewOpenedAt: string;
   appliedAt: string;
   updatedAt: string;
 }
@@ -38,7 +43,8 @@ export interface VerificationCheck {
 export interface KycDecisionRecord {
   id: number;
   customerId: string;
-  decision: "approve" | "reject" | "request_info";
+  /** open_review is written by the system when an existing customer's KYC is re-opened. */
+  decision: "approve" | "reject" | "request_info" | "open_review";
   fromStatus: KycStatus;
   toStatus: KycStatus;
   note: string;
@@ -77,7 +83,8 @@ export interface FeatureFlag {
 
 const CUSTOMER_COLUMNS = `id, name, email, country, city, date_of_birth AS dateOfBirth, account_type AS accountType,
   account_ref AS accountRef, document_type AS documentType, document_ref AS documentRef, document_expiry AS documentExpiry,
-  kyc_status AS kycStatus, risk_level AS riskLevel, risk_reason AS riskReason, applied_at AS appliedAt, updated_at AS updatedAt`;
+  kyc_status AS kycStatus, risk_level AS riskLevel, risk_reason AS riskReason, review_type AS reviewType,
+  review_reason AS reviewReason, review_opened_at AS reviewOpenedAt, applied_at AS appliedAt, updated_at AS updatedAt`;
 
 export function getCustomer(db: Db, id: string): Customer | null {
   return (db.prepare(`SELECT ${CUSTOMER_COLUMNS} FROM customers WHERE id = ?`).get(id) as Customer) ?? null;
@@ -86,8 +93,8 @@ export function getCustomer(db: Db, id: string): Customer | null {
 // ---- Customer queue search (validated from untrusted URL params) ----
 
 export const CUSTOMER_SORTS = {
-  applied_desc: "applied_at DESC",
-  applied_asc: "applied_at ASC",
+  opened_desc: "review_opened_at DESC",
+  opened_asc: "review_opened_at ASC",
   updated_desc: "updated_at DESC",
 } as const;
 export const PAGE_SIZES = [10, 25, 50] as const;
@@ -96,7 +103,8 @@ export const customerQuerySchema = z.object({
   q: z.string().trim().max(100).catch(""),
   status: z.enum(["all", "open", ...KYC_STATUSES]).catch("all"),
   risk: z.enum(["all", ...RISK_LEVELS]).catch("all"),
-  sort: z.enum(Object.keys(CUSTOMER_SORTS) as [keyof typeof CUSTOMER_SORTS]).catch("applied_desc"),
+  review: z.enum(["all", ...REVIEW_TYPES]).catch("all"),
+  sort: z.enum(Object.keys(CUSTOMER_SORTS) as [keyof typeof CUSTOMER_SORTS]).catch("opened_desc"),
   page: z.coerce.number().int().min(1).catch(1),
   pageSize: z.coerce
     .number()
@@ -111,6 +119,7 @@ export function parseCustomerQuery(raw: Record<string, string | string[] | undef
     q: first(raw.q) ?? "",
     status: first(raw.status),
     risk: first(raw.risk),
+    review: first(raw.review),
     sort: first(raw.sort),
     page: first(raw.page),
     pageSize: first(raw.pageSize),
@@ -132,6 +141,10 @@ export function searchCustomers(db: Db, query: CustomerQuery): { rows: Customer[
   if (query.risk !== "all") {
     where.push("risk_level = @risk");
     params.risk = query.risk;
+  }
+  if (query.review !== "all") {
+    where.push("review_type = @review");
+    params.review = query.review;
   }
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const { total } = db.prepare(`SELECT COUNT(*) AS total FROM customers ${whereSql}`).get(params) as { total: number };

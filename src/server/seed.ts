@@ -59,6 +59,7 @@ const APPROVE_NOTES = [
   "Documents verified against application; approved.",
 ];
 const TARGET: Record<SeedDecision, string> = { approve: "approved", reject: "rejected", request_info: "info_requested" };
+type DecisionRow = [customerId: string, decision: string, from: string, to: string, note: string, role: string, decidedAt: string];
 
 function checksFor(c: SeedCustomer, i: number): Record<CheckType, CheckRow> {
   const checks: Record<CheckType, CheckRow> = {
@@ -118,16 +119,16 @@ const REFUND_REASONS = [
 export function seedDatabase(db: Database.Database): void {
   const insertCustomer = db.prepare(
     `INSERT INTO customers (id, name, email, country, city, date_of_birth, account_type, account_ref, document_type, document_ref,
-       document_expiry, kyc_status, risk_level, risk_reason, applied_at, updated_at)
+       document_expiry, kyc_status, risk_level, risk_reason, review_type, review_reason, review_opened_at, applied_at, updated_at)
      VALUES (@id, @name, @email, @country, @city, @dob, @accountType, @accountRef, @document, @documentRef,
-       @documentExpiry, @status, @risk, @riskReason, @appliedAt, @updatedAt)`,
+       @documentExpiry, @status, @risk, @riskReason, @reviewType, @reviewReason, @reviewOpenedAt, @appliedAt, @updatedAt)`,
   );
   const insertCheck = db.prepare(
     `INSERT INTO verification_checks (customer_id, check_type, result, detail, checked_at) VALUES (?, ?, ?, ?, ?)`,
   );
   const insertDecision = db.prepare(
     `INSERT INTO kyc_decisions (customer_id, decision, from_status, to_status, note, decided_by_role, decided_at)
-     VALUES (?, ?, ?, ?, ?, 'kyc_reviewer', ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   );
   const insertTxn = db.prepare(
     `INSERT INTO transactions (id, customer_id, amount_cents, currency, description, status, created_at) VALUES (?, ?, ?, 'USD', ?, ?, ?)`,
@@ -143,15 +144,26 @@ export function seedDatabase(db: Database.Database): void {
   db.transaction(() => {
     SEED_CUSTOMERS.forEach((c, i) => {
       const id = seedCustomerId(c);
-      const appliedAt = at(c.appliedDaysAgo, -(i % 8));
-      const history = historyFor(c, i);
+      const caseOpenedAt = at(c.appliedDaysAgo, -(i % 8));
+      const appliedAt = c.existing ? at(c.existing.sinceDaysAgo, -(i % 8)) : caseOpenedAt;
+      if (c.existing && !["pending", "info_requested"].includes(c.status)) {
+        throw new Error(`Seed customer ${c.name}: only open cases can be existing-customer re-reviews`);
+      }
 
-      const decisions: [string, string, string, string, string, string][] = [];
+      const decisions: DecisionRow[] = [];
       let status = "pending";
-      let updatedAt = appliedAt;
-      for (const [decision, daysAgo, note] of history) {
+      let updatedAt = caseOpenedAt;
+      let firstApprovalDaysAgo: number | undefined;
+      if (c.existing) {
+        // Original onboarding approval, then the system re-opens the case.
+        firstApprovalDaysAgo = c.existing.sinceDaysAgo - 1;
+        decisions.push([id, "approve", "pending", "approved", "Onboarding checks passed; account opened.", "kyc_reviewer", at(firstApprovalDaysAgo, 1)]);
+        decisions.push([id, "open_review", "approved", "pending", c.existing.reason, "system", caseOpenedAt]);
+      }
+      for (const [decision, daysAgo, note] of historyFor(c, i)) {
         const decidedAt = at(daysAgo, 1);
-        decisions.push([id, decision, status, TARGET[decision], note, decidedAt]);
+        decisions.push([id, decision, status, TARGET[decision], note, "kyc_reviewer", decidedAt]);
+        if (decision === "approve") firstApprovalDaysAgo ??= daysAgo;
         status = TARGET[decision];
         updatedAt = decidedAt;
       }
@@ -173,6 +185,9 @@ export function seedDatabase(db: Database.Database): void {
         status: c.status,
         risk: c.risk,
         riskReason: c.riskReason,
+        reviewType: c.existing?.type ?? "onboarding",
+        reviewReason: c.existing?.reason ?? `New ${c.accountType} account application.`,
+        reviewOpenedAt: caseOpenedAt,
         appliedAt,
         updatedAt,
       });
@@ -181,11 +196,10 @@ export function seedDatabase(db: Database.Database): void {
       }
       for (const row of decisions) insertDecision.run(...row);
 
-      if (c.fixedTransactions) return;
-      const approvedDaysAgo = history.find(([d]) => d === "approve")?.[1];
-      const windowDays = approvedDaysAgo ?? c.appliedDaysAgo;
-      const count =
-        c.status === "approved" ? 2 + Math.floor(rng() * 4) : c.status === "rejected" ? Math.floor(rng() * 2) : Math.floor(rng() * 3);
+      // Only customers who have been approved at some point can have account activity.
+      if (c.fixedTransactions || firstApprovalDaysAgo === undefined) return;
+      const windowDays = Math.min(firstApprovalDaysAgo, 180);
+      const count = c.status === "approved" ? 2 + Math.floor(rng() * 4) : 2 + Math.floor(rng() * 3);
       for (let n = 1; n <= count; n++) {
         const [description, min, max] = pick(c.accountType === "business" ? BUSINESS_TXNS : PERSONAL_TXNS);
         const amount = dollars(min, max);

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Table } from "react-bootstrap";
+import { ClickableRow } from "./ClickableRow";
 
 export interface Column<T> {
   header: string;
@@ -13,7 +14,7 @@ interface QueueTableProps<T> {
   rows: T[];
   columns: Column<T>[];
   getRowKey: (row: T) => string;
-  /** When set, the first column links to this href and the matching row is highlighted. */
+  /** When set, the whole row (and a first-column link) opens this href. */
   getRowHref?: (row: T) => string;
   selectedKey?: string | null;
   emptyText?: string;
@@ -34,11 +35,19 @@ export function QueueTable<T>({ rows, columns, getRowKey, getRowHref, selectedKe
         {rows.map((row) => {
           const key = getRowKey(row);
           const href = getRowHref?.(row);
-          return (
-            <tr key={key} className={key === selectedKey ? "table-active" : undefined} data-testid={`row-${key}`}>
-              {columns.map((c, i) => (
-                <td key={c.header} className={c.className}>{i === 0 && href ? <Link href={href}>{c.render(row)}</Link> : c.render(row)}</td>
-              ))}
+          const className = key === selectedKey ? "table-active" : undefined;
+          const cells = columns.map((c, i) => (
+            <td key={c.header} className={c.className}>
+              {i === 0 && href ? <Link href={href}>{c.render(row)}</Link> : c.render(row)}
+            </td>
+          ));
+          return href ? (
+            <ClickableRow key={key} href={href} className={className} data-testid={`row-${key}`}>
+              {cells}
+            </ClickableRow>
+          ) : (
+            <tr key={key} className={className} data-testid={`row-${key}`}>
+              {cells}
             </tr>
           );
         })}

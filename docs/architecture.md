@@ -72,6 +72,10 @@ flowchart LR
 | `info_requested` | approve, reject | same approval rule |
 | `approved`, `rejected` | — | read-only (no reopen workflow) |
 
+Each customer row carries `review_type` (`onboarding | periodic_refresh | triggered`) and `review_reason` explaining
+why the case is in the queue. Onboarding applicants have no account activity until approved; re-reviews are existing
+customers (history shows the original `approve` and a `system` `open_review` row) and keep their transactions/refunds.
+
 `isKycRestricted(db, customerId)` — when flag `kyc_restriction` is ON, any customer whose current status is not
 `approved` (including `info_requested`) is restricted. Refunds (Session 2) should call it.
 

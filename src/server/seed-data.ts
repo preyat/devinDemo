@@ -1,5 +1,8 @@
 // Hand-written synthetic customers (all fictional). seed.ts expands these into rows.
-// Invariant: approved customers use the "clean" scenario (all mandatory checks passed at approval).
+// Invariants (enforced in seed.ts + tests/seed.test.ts):
+// - approved customers use the "clean" scenario (all mandatory checks passed at approval);
+// - customers who were never approved (onboarding applicants) have no transactions or refunds;
+// - pending/info_requested customers with activity are EXISTING customers in a re-review (`existing`).
 
 export type Scenario =
   | "clean"
@@ -26,6 +29,11 @@ export interface SeedCustomer {
   riskReason: string;
   scenario: Scenario;
   appliedDaysAgo: number;
+  /**
+   * Existing customer whose KYC case was re-opened (periodic refresh or triggered review).
+   * Absent = onboarding case for a new applicant. `appliedDaysAgo` is always when the current case opened.
+   */
+  existing?: { sinceDaysAgo: number; type: "periodic_refresh" | "triggered"; reason: string };
   /** Overrides for the generated check explanations. */
   detail?: Partial<Record<"identity" | "address" | "sanctions" | "pep", string>>;
   /** Decision history, oldest first: [decision, daysAgo, note]. Defaults are derived from status. */
@@ -38,13 +46,15 @@ export const SEED_CUSTOMERS: SeedCustomer[] = [
   // ---- Pending review (15) ----
   {
     id: "cus_maya_reed", name: "Maya Reed", country: "US", city: "New York", accountType: "personal", document: "Passport",
-    status: "pending", risk: "medium", riskReason: "New customer; first purchase is large relative to stated income.",
-    scenario: "clean", appliedDaysAgo: 6, fixedTransactions: true,
+    status: "pending", risk: "medium", riskReason: "Recent customer; $750 purchase is large relative to declared income.",
+    scenario: "clean", appliedDaysAgo: 3, fixedTransactions: true,
+    existing: { sinceDaysAgo: 45, type: "triggered", reason: "Triggered review: $750 purchase is large relative to declared income and was followed by a refund request." },
   },
   {
     name: "Samira Patel", country: "GB", city: "Leicester", accountType: "personal", document: "Passport",
     status: "pending", risk: "medium", riskReason: "Recent change of address; regular cross-border payments to India expected.",
     scenario: "address_missing", appliedDaysAgo: 5,
+    existing: { sinceDaysAgo: 320, type: "periodic_refresh", reason: "Periodic refresh: customer reported a change of address; proof of the new address is required." },
   },
   {
     name: "Viktor Sokolov", country: "CY", city: "Limassol", accountType: "business", document: "Passport",
@@ -54,8 +64,9 @@ export const SEED_CUSTOMERS: SeedCustomer[] = [
   },
   {
     name: "Lucas Moreau", country: "FR", city: "Lyon", accountType: "personal", document: "Passport",
-    status: "pending", risk: "medium", riskReason: "Identity document on file has expired.",
+    status: "pending", risk: "medium", riskReason: "Long-standing customer; identity document on file has expired.",
     scenario: "doc_expired", appliedDaysAgo: 3,
+    existing: { sinceDaysAgo: 700, type: "periodic_refresh", reason: "Periodic refresh: passport on file expired on 2025-11-30; a valid identity document is required." },
   },
   {
     name: "Hannah Schmidt", country: "DE", city: "Munich", accountType: "personal", document: "National ID",
@@ -81,6 +92,7 @@ export const SEED_CUSTOMERS: SeedCustomer[] = [
   {
     name: "Kenji Watanabe", country: "JP", city: "Osaka", accountType: "business", document: "Passport",
     status: "pending", risk: "medium", riskReason: "Import/export business with international suppliers.", scenario: "clean", appliedDaysAgo: 11,
+    existing: { sinceDaysAgo: 260, type: "triggered", reason: "Triggered review: sharp increase in international supplier payments." },
   },
   {
     name: "Olivia Bennett", country: "AU", city: "Melbourne", accountType: "personal", document: "Driver licence",
@@ -97,6 +109,7 @@ export const SEED_CUSTOMERS: SeedCustomer[] = [
   {
     name: "Noah Fischer", country: "CH", city: "Zurich", accountType: "business", document: "Passport",
     status: "pending", risk: "medium", riskReason: "Wealth management client with multiple linked accounts.", scenario: "clean", appliedDaysAgo: 13,
+    existing: { sinceDaysAgo: 540, type: "periodic_refresh", reason: "Scheduled 18-month review for a medium-risk wealth management client." },
   },
   {
     name: "Priya Nair", country: "IN", city: "Bengaluru", accountType: "personal", document: "Passport",
@@ -113,6 +126,7 @@ export const SEED_CUSTOMERS: SeedCustomer[] = [
   {
     name: "Fatima Zahra", country: "MA", city: "Casablanca", accountType: "personal", document: "Passport",
     status: "info_requested", risk: "medium", riskReason: "Expired passport submitted; remittance corridor activity.", scenario: "doc_expired", appliedDaysAgo: 18,
+    existing: { sinceDaysAgo: 410, type: "periodic_refresh", reason: "Periodic refresh: passport on file has expired." },
     history: [["request_info", 16, "Customer to provide a valid, unexpired passport or national ID."]],
   },
   {
@@ -134,6 +148,7 @@ export const SEED_CUSTOMERS: SeedCustomer[] = [
   {
     name: "Zoe Martin", country: "CA", city: "Toronto", accountType: "personal", document: "Driver licence",
     status: "info_requested", risk: "low", riskReason: "Recently relocated from another province.", scenario: "address_missing", appliedDaysAgo: 7,
+    existing: { sinceDaysAgo: 230, type: "periodic_refresh", reason: "Customer reported relocation to Toronto; proof of the new address is required." },
     history: [["request_info", 6, "Please send a recent utility bill showing the new Toronto address."]],
   },
   {
@@ -150,11 +165,13 @@ export const SEED_CUSTOMERS: SeedCustomer[] = [
   {
     name: "Ethan Brooks", country: "US", city: "Austin", accountType: "personal", document: "Driver licence",
     status: "info_requested", risk: "low", riskReason: "Expired driver licence on file.", scenario: "doc_expired", appliedDaysAgo: 11,
+    existing: { sinceDaysAgo: 600, type: "periodic_refresh", reason: "Periodic refresh: driver licence on file has expired." },
     history: [["request_info", 10, "Driver licence expired; provide a current licence or passport."]],
   },
   {
     name: "Yara Haddad", country: "AE", city: "Dubai", accountType: "business", document: "Passport",
     status: "info_requested", risk: "high", riskReason: "Large expected volumes; complex ownership structure.", scenario: "address_missing", appliedDaysAgo: 30,
+    existing: { sinceDaysAgo: 380, type: "triggered", reason: "Triggered review: transaction volumes well above the expected business profile." },
     history: [["request_info", 27, "Provide proof of business address and an ownership structure chart."]],
   },
 

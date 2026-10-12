@@ -49,7 +49,7 @@ export function QueueFilters({ searchPlaceholder, selects }: { searchPlaceholder
           </div>
         </Col>
         {selects.map((s) => (
-          <Col key={s.name} xs={6} md={3}>
+          <Col key={s.name} xs={6} md={4} xxl>
             <Form.Label className="small mb-1" htmlFor={`filter-${s.name}`}>{s.label}</Form.Label>
             <Form.Select
               id={`filter-${s.name}`}

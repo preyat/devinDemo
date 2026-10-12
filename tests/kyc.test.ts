@@ -34,7 +34,7 @@ describe("KYC decisions", () => {
 
     expect(result).toEqual({ ok: false, code: "rule_violation", message: "Cannot approve: proof of address is missing." });
     expect(getCustomer(db, SEED_IDS.samira)?.kycStatus).toBe("pending");
-    expect(listKycDecisions(db, SEED_IDS.samira)).toHaveLength(0);
+    expect(listKycDecisions(db, SEED_IDS.samira)[0].decision).toBe("open_review");
   });
 
   it("blocks approval when the identity document is expired (Lucas)", () => {
@@ -124,7 +124,7 @@ describe("KYC decisions", () => {
     expect(decideKyc(db, "kyc_reviewer", { customerId: "cus_marcus_hale", decision: "request_info", note: "x" }, NOW)).toMatchObject({
       code: "invalid_transition",
     });
-    expect(listKycDecisions(db, SEED_IDS.maya)).toHaveLength(1);
+    expect(listKycDecisions(db, SEED_IDS.maya).filter((d) => d.decidedAt === NOW.toISOString())).toHaveLength(1);
   });
 
   it("records successful and blocked actions in the audit trail", () => {
@@ -151,7 +151,7 @@ describe("KYC decisions", () => {
     db.exec("DROP TABLE audit_events");
     expect(() => decideKyc(db, "kyc_reviewer", approve(SEED_IDS.maya), NOW)).toThrow();
     expect(getCustomer(db, SEED_IDS.maya)?.kycStatus).toBe("pending");
-    expect(listKycDecisions(db, SEED_IDS.maya)).toHaveLength(0);
+    expect(listKycDecisions(db, SEED_IDS.maya)[0].decision).toBe("open_review");
   });
 
   it("keeps verification checks unchanged by decisions", () => {

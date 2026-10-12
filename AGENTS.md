@@ -34,7 +34,8 @@ Dashio-derived theme (Inter font, sidebar layout, light/dark) · lucide-react ·
 | `src/app/actions/role.ts` | `setDemoRole` server action (writes `demo_role` cookie). |
 | `src/components/PortalShell.tsx` | Client app chrome: sidebar nav from `WORKFLOWS` (active state, "Soon" for unavailable, mobile off-canvas) + sticky header with `DemoRoleSelector` and `ThemeToggle`. |
 | `src/components/ThemeToggle.tsx` | Client light/dark toggle (`data-bs-theme` + `theme` cookie). |
-| `src/components/QueueTable.tsx` | Generic table: `columns`, `getRowKey`, optional `getRowHref`, `selectedKey`. |
+| `src/components/QueueTable.tsx` | Generic table: `columns` (optional `className`), `getRowKey`, optional `getRowHref` (whole row clickable), `selectedKey`. |
+| `src/components/ClickableRow.tsx` | Client `<tr>` that navigates on click (ignores clicks on links/buttons/inputs). |
 | `src/components/QueueFilters.tsx` | Client, URL-driven search box + select filters; any change resets `page`. |
 | `src/components/QueuePagination.tsx` | Client prev/next/page links preserving other URL params + "Showing x–y of n". |
 | `src/components/SummaryCards.tsx` | Row of metric cards (`label`, `value`, `variant`). |
@@ -67,9 +68,10 @@ Dashio-derived theme (Inter font, sidebar layout, light/dark) · lucide-react ·
 
 ## Data model
 
-`customers` (kyc_status `pending | info_requested | approved | rejected`, risk_level `low | medium | high`, risk_reason),
+`customers` (kyc_status `pending | info_requested | approved | rejected`, risk_level `low | medium | high`, risk_reason,
+review_type `onboarding | periodic_refresh | triggered` + review_reason + review_opened_at = why the current KYC case exists; applied_at = original application),
 `verification_checks` (one row per customer × `identity | address | sanctions | pep`; result `passed | missing | failed | clear | review_required` + `detail`),
-`kyc_decisions` (append-only history: decision, from/to status, note, role, time), `transactions`, `refunds`,
+`kyc_decisions` (append-only history: decision, from/to status, note, role, time; `open_review` rows are written by role `system` when an existing customer is re-reviewed), `transactions`, `refunds`,
 `feature_flags` (`kyc_restriction`, OFF), `risk_holds` (empty), `audit_events`.
 
 ## Service boundaries
@@ -101,7 +103,9 @@ Dashio-derived theme (Inter font, sidebar layout, light/dark) · lucide-react ·
 9. **Money** is integer cents (`amount_cents`); format with `formatMoney`.
 10. **Services take `now: Date`** as an optional last argument for deterministic tests.
 11. **Seed is deterministic**: hand-written `seed-data.ts`, timestamps derived from `SEED_TIMESTAMP`, generated rows from
-    a fixed-seed PRNG. Seed invariants (e.g. approved ⇒ all checks pass) are enforced in `seed.ts` and `tests/seed.test.ts`.
+    a fixed-seed PRNG. Seed invariants are enforced in `seed.ts` and `tests/seed.test.ts`: approved ⇒ all checks pass;
+    never-approved applicants (onboarding) have no transactions/refunds; activity only after the first approval;
+    open cases with history are re-reviews (`existing` in `seed-data.ts`) with an `approve` → `open_review` trail.
 12. **Schema changes**: edit `schema.ts`, add the table to `TABLES`, bump `SCHEMA_VERSION`, update seed + tests.
 13. **Tests** use `createTestDb()`; never touch `data/portal.db`.
 14. **Styling**: theme via `src/styles/_variables.scss`; layout/token rules in `portal.scss`. In components use

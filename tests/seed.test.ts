@@ -7,7 +7,7 @@ import { KYC_RESTRICTION_FLAG, SEED_IDS } from "@/server/seed";
 import { createTestDb } from "./helpers";
 
 const dump = (db: Db) => Object.fromEntries(TABLES.map((t) => [t, db.prepare(`SELECT * FROM ${t} ORDER BY 1, 2`).all()]));
-type Row = { id: string; kyc_status: string };
+type Row = { id: string };
 
 describe("seed data", () => {
   let db: Db;
@@ -32,26 +32,60 @@ describe("seed data", () => {
     expect(counts).toEqual({ approved: 20, pending: 15, info_requested: 10, rejected: 5 });
   });
 
-  it("keeps data consistent: approved customers passed all checks; decided customers have matching history", () => {
-    for (const c of db.prepare("SELECT id, kyc_status FROM customers").all() as Row[]) {
-      const checks = listVerificationChecks(db, c.id);
+  it("keeps data consistent: approved customers passed all checks; history matches the current status", () => {
+    for (const { id } of db.prepare("SELECT id FROM customers").all() as Row[]) {
+      const c = getCustomer(db, id)!;
+      const checks = listVerificationChecks(db, id);
       expect(checks).toHaveLength(4);
-      const history = listKycDecisions(db, c.id);
-      if (c.kyc_status === "approved") expect(getApprovalBlockers(checks)).toEqual([]);
-      if (c.kyc_status === "info_requested") expect(getApprovalBlockers(checks).length).toBeGreaterThan(0);
-      if (c.kyc_status === "pending") expect(history).toHaveLength(0);
-      else expect(history[0].toStatus).toBe(c.kyc_status);
+      const history = listKycDecisions(db, id);
+      if (c.kycStatus === "approved") expect(getApprovalBlockers(checks)).toEqual([]);
+      if (c.kycStatus === "info_requested") expect(getApprovalBlockers(checks).length).toBeGreaterThan(0);
+      if (c.kycStatus === "pending" && c.reviewType === "onboarding") expect(history).toHaveLength(0);
+      else expect(history[0].toStatus).toBe(c.kycStatus);
+    }
+  });
+
+  it("only gives account activity to customers who were approved, and only after approval", () => {
+    for (const { id } of db.prepare("SELECT id FROM customers").all() as Row[]) {
+      const c = getCustomer(db, id)!;
+      const history = listKycDecisions(db, id);
+      const firstApproval = history.filter((d) => d.decision === "approve").at(-1);
+      const txns = listTransactionsForCustomer(db, id);
+      const refunds = listRefundsForCustomer(db, id);
+      if (!firstApproval) {
+        expect(c.reviewType).toBe("onboarding");
+        expect([txns.length, refunds.length]).toEqual([0, 0]);
+        continue;
+      }
+      for (const t of txns) expect(t.createdAt > firstApproval.decidedAt).toBe(true);
+      for (const r of refunds) expect(r.createdAt > firstApproval.decidedAt).toBe(true);
+    }
+  });
+
+  it("explains every open re-review: existing customers were approved, then the system opened a review", () => {
+    const reReviews = (db.prepare("SELECT id FROM customers WHERE review_type != 'onboarding'").all() as Row[]).map(({ id }) => getCustomer(db, id)!);
+    expect(reReviews.length).toBeGreaterThanOrEqual(5);
+    for (const c of reReviews) {
+      expect(["pending", "info_requested"]).toContain(c.kycStatus);
+      expect(c.reviewReason.length).toBeGreaterThan(10);
+      expect(c.appliedAt < c.reviewOpenedAt).toBe(true);
+      const history = listKycDecisions(db, c.id).reverse();
+      expect(history.slice(0, 2).map((d) => [d.decision, d.decidedByRole])).toEqual([
+        ["approve", "kyc_reviewer"],
+        ["open_review", "system"],
+      ]);
+      expect(history[1].note).toBe(c.reviewReason);
     }
   });
 
   it("preserves the named demo scenarios", () => {
-    expect(getCustomer(db, SEED_IDS.maya)).toMatchObject({ kycStatus: "pending", riskLevel: "medium" });
+    expect(getCustomer(db, SEED_IDS.maya)).toMatchObject({ kycStatus: "pending", riskLevel: "medium", reviewType: "triggered" });
     expect(getApprovalBlockers(listVerificationChecks(db, SEED_IDS.maya))).toEqual([]);
-    expect(getCustomer(db, SEED_IDS.samira)).toMatchObject({ kycStatus: "pending", riskLevel: "medium" });
+    expect(getCustomer(db, SEED_IDS.samira)).toMatchObject({ kycStatus: "pending", riskLevel: "medium", reviewType: "periodic_refresh" });
     expect(getApprovalBlockers(listVerificationChecks(db, SEED_IDS.samira))).toEqual(["proof of address is missing"]);
     expect(getCustomer(db, SEED_IDS.jordan)).toMatchObject({ kycStatus: "approved", riskLevel: "low" });
     expect(getCustomer(db, SEED_IDS.alex)).toMatchObject({ kycStatus: "approved", riskLevel: "low" });
-    expect(getCustomer(db, SEED_IDS.viktor)).toMatchObject({ riskLevel: "high", kycStatus: "pending" });
+    expect(getCustomer(db, SEED_IDS.viktor)).toMatchObject({ riskLevel: "high", kycStatus: "pending", reviewType: "onboarding" });
   });
 
   it("keeps the existing refund and transaction relationships intact", () => {

@@ -133,6 +133,10 @@ h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6 {
   }
 }
 
+.row-link {
+  cursor: pointer;
+}
+
 // RecordDetail uses a wrapper div inside <dl class="row">.
 .contents {
   display: contents;

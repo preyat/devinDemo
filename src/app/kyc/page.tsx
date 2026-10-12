@@ -61,11 +61,21 @@ const FILTERS: FilterSelect[] = [
     ],
   },
   {
+    name: "review",
+    label: "Review type",
+    options: [
+      { value: "all", label: "All review types" },
+      { value: "onboarding", label: "Onboarding" },
+      { value: "periodic_refresh", label: "Periodic refresh" },
+      { value: "triggered", label: "Triggered" },
+    ],
+  },
+  {
     name: "sort",
     label: "Sort",
     options: [
-      { value: "applied_desc", label: "Newest applications" },
-      { value: "applied_asc", label: "Oldest applications" },
+      { value: "opened_desc", label: "Newest cases" },
+      { value: "opened_asc", label: "Oldest cases" },
       { value: "updated_desc", label: "Recently updated" },
     ],
   },
@@ -107,10 +117,10 @@ export default async function KycPage({ searchParams }: { searchParams: Promise<
                 emptyText="No customers match these filters."
                 columns={[
                   { header: "Customer", render: (c) => c.name, className: "text-nowrap" },
-                  { header: "Country", render: (c) => c.country },
+                  { header: "Review", render: (c) => <StatusBadge status={c.reviewType} />, className: "text-nowrap" },
                   { header: "KYC status", render: (c) => <StatusBadge status={c.kycStatus} /> },
                   { header: "Risk", render: (c) => <StatusBadge status={c.riskLevel} /> },
-                  { header: "Applied", render: (c) => c.appliedAt.slice(0, 10), className: "text-nowrap" },
+                  { header: "Opened", render: (c) => c.reviewOpenedAt.slice(0, 10), className: "text-nowrap" },
                   { header: "Updated", render: (c) => c.updatedAt.slice(0, 10), className: "text-nowrap" },
                 ]}
               />
@@ -161,11 +171,19 @@ function CustomerCase({ customerId, canDecide }: { customerId: string; canDecide
           { label: "Location", value: `${c.city}, ${c.country}` },
           { label: "Date of birth", value: c.dateOfBirth },
           { label: "Document", value: `${c.documentType} ${c.documentRef} (expires ${c.documentExpiry})` },
-          { label: "Applied", value: formatDateTime(c.appliedAt) },
+          { label: c.reviewType === "onboarding" ? "Applied" : "Customer since", value: formatDateTime(c.appliedAt) },
+          { label: "Case opened", value: formatDateTime(c.reviewOpenedAt) },
           { label: "Last updated", value: formatDateTime(c.updatedAt) },
         ]}
       >
-        <div className="border-top pt-2 mt-2 small" data-testid="risk-summary">
+        <div className="border rounded-3 p-2 mt-2 small bg-body-tertiary" data-testid="case-reason">
+          <div className="d-flex align-items-center gap-2 mb-1">
+            <span className="fw-semibold">{allowedKycDecisions(c.kycStatus).length ? "Why this case is open" : "Latest review"}</span>
+            <StatusBadge status={c.reviewType} />
+          </div>
+          <span className="text-muted">{c.reviewReason}</span>
+        </div>
+        <div className="pt-2 mt-2 small" data-testid="risk-summary">
           <span className="fw-semibold">Risk classification: </span>
           <StatusBadge status={c.riskLevel} /> <span className="text-muted">{c.riskReason}</span>
         </div>

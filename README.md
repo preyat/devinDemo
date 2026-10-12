@@ -36,14 +36,18 @@ npm test           # vitest run (in-memory SQLite, no watch)
 50 synthetic customers (20 approved, 15 pending, 10 awaiting info, 5 rejected), ~94 transactions, ~21 refunds,
 fully reproducible on every `npm run db:reset`. Demo scenarios:
 
-| Customer      | KYC      | Risk   | Scenario |
-| ------------- | -------- | ------ | -------- |
-| Maya Reed     | pending  | medium | All checks passed → can be approved; $750 refund pending |
-| Samira Patel  | pending  | medium | Proof of address missing → approval blocked; request info |
-| Viktor Sokolov| pending  | high   | Potential sanctions match → approval blocked |
-| Lucas Moreau  | pending  | medium | Expired passport → approval blocked |
-| Jordan Lee    | approved | low    | $420 refund already processed |
-| Alex Kim      | approved | low    | $350 refund pending + separate $4,500 transaction; no risk hold |
+Each case has a review type explaining why it is in the queue: **Onboarding** (new applicant — no account
+activity until approved), **Periodic refresh** or **Triggered** (existing customer being re-reviewed — keeps their
+transaction/refund history).
+
+| Customer       | KYC      | Risk   | Review           | Scenario |
+| -------------- | -------- | ------ | ---------------- | -------- |
+| Maya Reed      | pending  | medium | Triggered        | All checks passed → can be approved; $750 purchase + pending refund triggered the review |
+| Samira Patel   | pending  | medium | Periodic refresh | Reported address change; proof of address missing → approval blocked; request info |
+| Viktor Sokolov | pending  | high   | Onboarding       | Potential sanctions match → approval blocked |
+| Lucas Moreau   | pending  | medium | Periodic refresh | Passport on file expired → approval blocked |
+| Jordan Lee     | approved | low    | —                | $420 refund already processed |
+| Alex Kim       | approved | low    | —                | $350 refund pending + separate $4,500 transaction; no risk hold |
 
 Feature flag `kyc_restriction` is OFF. No risk holds. Audit log is empty.
 
