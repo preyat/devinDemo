@@ -33,11 +33,17 @@ Copy their shape; do not invent new layers or a generic workflow engine.
 5. **Tests** — `tests/<workflow>.test.ts` with `createTestDb()`: each reason code, success + persisted state,
    repeat attempt, every forbidden role (`it.each`, incl. `null`), validation, not found, success/denied audit rows
    with `details.reasons`, no mutation on denial, rollback when `audit_events` is dropped. Run `npm test`.
-6. **UI** — compose `PageHeader`, `SummaryCards`, `QueueFilters`, `QueueTable` (`getRowHref` + `withParams`),
-   `QueuePagination`, `RecordDetail`, `VerificationChecklist` (render `can<Action>().checks`), `StatusBadge`,
-   `DecisionForm` via a tiny client wrapper (`key` = record id). Pages call the service helpers — never re-derive a
-   rule. Keep the action button visible-but-annotated for wrong roles so the backend rejection is demonstrable.
-   `CardHeader`/`CardBody` in server components. Set `available: true` in `src/lib/workflows.ts`.
+6. **UI** — queue page + case page, like `src/app/kyc/page.tsx` + `src/app/kyc/[customerId]/page.tsx`
+   (user feedback: a detail panel beside the queue felt cramped; reviewers want a focused case page).
+   Queue: `PageHeader`, `SummaryCards`, `QueueFilters`, full-width `QueueTable` with rows linking to
+   `/<workflow>/<id>` + current queue params (`withParams`), `QueuePagination`. Case: `RecordNav` (back keeps filters;
+   prev/next via a `get<X>QueueNeighbours` lookup sharing the queue's WHERE + ORDER BY), header card (status + why it
+   needs attention), `RecordTabs` (Overview incl. decision form / Activity / History+audit), `RecordFields`,
+   `VerificationChecklist` (render `can<Action>().checks`), `StatusBadge`, `DecisionForm` via a tiny client wrapper
+   (`key` = record id; `successAction` = "Next" link). Actions `revalidatePath("/<workflow>", "layout")`. Pages call the
+   service helpers — never re-derive a rule. Keep the action button visible-but-annotated for wrong roles so the
+   backend rejection is demonstrable. `CardHeader`/`CardBody` in server components. Set `available: true` in
+   `src/lib/workflows.ts`. Single-page admin lists without a "case" (Feature Flags) may stay on one page.
 7. **Verify** — `npm run typecheck && npm run lint && npm test`; architecture greps from `review-internal-tool`;
    `npm run dev` + `SMOKE_CDP_URL=http://localhost:29229 npm run smoke` with new checks ordered as one story
    (see `browser-check`). Capture screenshots outside the repo for the PR. `npm run db:reset` afterwards.

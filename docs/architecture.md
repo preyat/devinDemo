@@ -156,8 +156,14 @@ and `/refunds`.
 4. **Tests** — `tests/<workflow>.test.ts` using `createTestDb()`: success + persistence, forbidden role,
    invalid transition, rule violation, validation, audit rows.
 5. **Action** — `src/app/<workflow>/actions.ts`, a thin `"use server"` adapter like `src/app/kyc/actions.ts`.
-6. **UI** — `src/app/<workflow>/page.tsx` composing `PageHeader`, `SummaryCards`, `QueueFilters`, `QueueTable`,
-   `QueuePagination`, `RecordDetail`, `StatusBadge`; a small client wrapper around `DecisionForm`.
+6. **UI** — two pages, queue + case (see `src/app/kyc/`):
+   - `src/app/<workflow>/page.tsx`: `PageHeader`, `SummaryCards`, `QueueFilters`, full-width `QueueTable`
+     (`getRowHref={(r) => withParams(\`/<workflow>/${r.id}\`, params)}`), `QueuePagination`.
+   - `src/app/<workflow>/[id]/page.tsx`: `RecordNav` (back keeps filters; prev/next from a `get<X>QueueNeighbours`
+     lookup reusing the queue's WHERE/sort), a header card (status + why it needs attention), `RecordTabs`
+     (Overview with the decision form first, then related activity, then history/audit), `RecordFields`, `StatusBadge`,
+     and a small client wrapper around `DecisionForm` passing `successAction` = "Next" link.
+   - Actions call `revalidatePath("/<workflow>", "layout")` so both pages refresh.
 7. **Nav** — set `available: true` in `src/lib/workflows.ts`.
 8. **Schema/seed** — only if needed: edit `schema.ts` (bump `SCHEMA_VERSION`), `seed-data.ts`/`seed.ts`, then `npm run db:reset`.
 9. Update `AGENTS.md` file map and this doc.

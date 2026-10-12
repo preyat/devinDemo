@@ -52,12 +52,14 @@ Dashio-derived theme (Inter font, sidebar layout, light/dark) · lucide-react ·
 | `src/styles/_variables.scss` | Bootstrap variable overrides (colours, Inter, radii, shadows, `$sidebar-width`), adapted from Dashio (MIT). |
 | `src/styles/portal.scss` | Imports Bootstrap SCSS + light/dark tokens + sidebar/header layout. The only global stylesheet. |
 | `src/app/page.tsx` | Home: workflow cards from `src/lib/workflows.ts`. |
-| `src/app/kyc/page.tsx` | KYC Review (server component): summary cards, filtered/paginated queue, case panel (profile, risk, verification, decision, history, transactions, refunds, audit). |
-| `src/app/kyc/actions.ts` | `"use server"` adapter: `decideKycAction` → `decideKyc`, then `revalidatePath`. |
+| `src/app/kyc/page.tsx` | KYC queue (server component): summary cards, URL-driven filters, full-width paginated queue; rows open `/kyc/<id>` carrying the queue params. Legacy `?customer=` redirects. |
+| `src/app/kyc/[customerId]/page.tsx` | KYC case page: `RecordNav` (back to filtered queue, prev/next), header (status, risk, review type, why open), `RecordTabs` Overview (profile, risk, checks, decision) / Activity (transactions, refunds) / History (decisions, audit). |
+| `src/app/refunds/[refundId]/page.tsx` | Refund page (same pattern as the KYC case page): `RecordNav`, header with eligibility codes, `RecordTabs` Overview (fields incl. paid/partial + assignee, `canProcessRefund` checks, Process/Reject form with partial amount, Claim form) / Activity (payout, sibling refunds) / History (audit). `/refunds?refund=` redirects here. |
+| `src/app/kyc/actions.ts` | `"use server"` adapter: `decideKycAction` → `decideKyc`, then `revalidatePath("/kyc", "layout")` (covers case pages). |
 | `src/app/kyc/KycDecisionForm.tsx` | Client wrapper configuring `DecisionForm` with KYC buttons/icons and the blocked-approval notice. |
-| `src/app/refunds/page.tsx` | Refunds (server component): summary cards, active-flag banner, refund queue with per-row eligibility badges, detail (fields, `canProcessRefund` checklist, Process/Reject form with partial amount, Claim form, Bulk process card, payout, other refunds on the transaction, audit). |
-| `src/app/refunds/actions.ts` | `decideRefundAction` (process/reject), `claimRefundAction`, `bulkProcessRefundsAction`; each calls one service and revalidates `/refunds`. |
-| `src/app/refunds/ProcessRefundForm.tsx`, `ClaimRefundForm.tsx`, `BulkProcessForm.tsx` | Client wrappers around `DecisionForm` (`extraFields` for amount / assignee / checkbox list; distinct `noteId`s). |
+| `src/app/refunds/page.tsx` | Refunds queue (server component): summary cards, active-flag banner, full-width refund queue (eligibility badges, assignee, assignment filter); rows open `/refunds/<id>` with the queue params; Bulk process card for eligible pending refunds on the page. |
+| `src/app/refunds/actions.ts` | `decideRefundAction` (process/reject), `claimRefundAction`, `bulkProcessRefundsAction`; each calls one service and `revalidatePath("/refunds", "layout")`. |
+| `src/app/refunds/ProcessRefundForm.tsx`, `ClaimRefundForm.tsx`, `BulkProcessForm.tsx` | Client wrappers around `DecisionForm` (`extraFields` for amount / assignee / checkbox list; distinct `noteId`s; Process form offers "Next refund" via `successAction`). |
 | `src/app/feature-flags/page.tsx` | Feature Flags (server component): flag table, detail (registry metadata, refunds currently blocked by the flag, toggle form, audit). |
 | `src/app/feature-flags/actions.ts` | `toggleFeatureFlagAction` → `toggleFeatureFlag`; revalidates `/feature-flags` and `/refunds`. |
 | `src/app/feature-flags/ToggleFlagForm.tsx` | Client wrapper around `DecisionForm` with Turn ON / Turn OFF (from `allowedFlagDecisions`). |
@@ -69,9 +71,11 @@ Dashio-derived theme (Inter font, sidebar layout, light/dark) · lucide-react ·
 | `src/components/QueueFilters.tsx` | Client, URL-driven search box + select filters; any change resets `page`. |
 | `src/components/QueuePagination.tsx` | Client prev/next/page links preserving other URL params + "Showing x–y of n". |
 | `src/components/SummaryCards.tsx` | Row of metric cards (`label`, `value`, `variant`). |
-| `src/components/RecordDetail.tsx` | Card with label/value list + `children` slot. |
+| `src/components/RecordDetail.tsx` | `RecordFields` (label/value list) and `RecordDetail` (card wrapping it + `children`). |
+| `src/components/RecordTabs.tsx` | Client tabs for a record page; server-rendered tab content passed as props. |
+| `src/components/RecordNav.tsx` | Case-page nav: back to filtered queue, "x of n", previous/next links. |
 | `src/components/VerificationChecklist.tsx` | List of `{ label, status, detail }` with `StatusBadge`. |
-| `src/components/DecisionForm.tsx` | Client generic note + decision buttons form bound to a server action returning `OperationResult`; `notice`, `readOnlyMessage`. |
+| `src/components/DecisionForm.tsx` | Client generic note + decision buttons form bound to a server action returning `OperationResult`; `notice`, `readOnlyMessage`, `successAction` (e.g. "Next case"). |
 | `src/components/StatusBadge.tsx` | Status → Bootstrap colour + label (re-exports `statusLabel`). |
 | `src/components/OperationFeedback.tsx` | Renders an `OperationResult` as success/danger alert. |
 | `src/components/PageHeader.tsx` | Page title + description. |
@@ -85,7 +89,7 @@ Dashio-derived theme (Inter font, sidebar layout, light/dark) · lucide-react ·
 | `src/server/schema.ts` | All DDL, `SCHEMA_VERSION`, `TABLES` (drop order). |
 | `src/server/seed-data.ts` | Hand-written synthetic customers (status, risk, scenario, history). |
 | `src/server/seed.ts` | Expands seed-data into rows; deterministic PRNG for transactions/refunds; `SEED_IDS`, `SEED_TIMESTAMP`; one `feature_flags` row per definition; one payout per processed refund. |
-| `src/server/lookups.ts` | Read-only queries + row types: customers (`searchCustomers`, `parseCustomerQuery`, `getKycSummary`), checks, decisions, transactions; refunds (`searchRefunds`, `parseRefundQuery`, `getRefund`, `getRefundSummary`, `listRefundsForTransaction`, `listPendingRefundIds`, `listPayoutsForRefund`); `getFeatureFlag`, `listFeatureFlags`. |
+| `src/server/lookups.ts` | Read-only queries + row types: customers (`searchCustomers`, `parseCustomerQuery`, `getCustomerQueueNeighbours`, `getKycSummary`), checks, decisions, transactions; refunds (`searchRefunds`, `parseRefundQuery`, `getRefund`, `getRefundSummary`, `listRefundsForTransaction`, `listPendingRefundIds`, `listPayoutsForRefund`); `getFeatureFlag`, `listFeatureFlags`. |
 | `src/server/roles.ts` | `ROLES`, `ROLE_LABELS`, `parseRoleClaim` (untrusted claim parsing). |
 | `src/server/permissions.ts` | `PERMISSIONS` policy map, `can`, `assertCan`. |
 | `src/server/errors.ts` | `OperationError(code, message, details?)` — expected failures; `details` (e.g. `{ reasons }`) is merged into the denied audit row. |
@@ -158,6 +162,7 @@ review_type `onboarding | periodic_refresh | triggered` + review_reason + review
 
 ## Gotchas
 
+- Record pages: compute "Next" before the decision and keep it in client state (`useState(nextHref)`); a decision changes `updated_at`, which can re-sort the queue and make a recomputed Next point backwards. Render disabled prev/next as `<span>`, not `Link href="#"`.
 - React Bootstrap in **server components**: use named sub-components (`CardHeader`, `CardBody`, `ListGroupItem`)
   not dot access (`Card.Header`) — dot access on a client reference is `undefined` in RSC and 500s the page.
   Components that pass functions/elements as props (e.g. `as={Link}`, lucide icons) must be `"use client"`.

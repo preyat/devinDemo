@@ -14,6 +14,6 @@ export async function decideKycAction(_prev: OperationResult | null, formData: F
     decision: formData.get("decision"),
     note: formData.get("note") ?? "",
   });
-  revalidatePath("/kyc");
+  revalidatePath("/kyc", "layout");
   return result;
 }

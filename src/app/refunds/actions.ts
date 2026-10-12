@@ -16,7 +16,7 @@ export async function decideRefundAction(_prev: OperationResult | null, formData
     formData.get("decision") === "reject"
       ? rejectRefund(db, role, { refundId, note })
       : processRefund(db, role, { refundId, note, amount: formData.get("amount") });
-  revalidatePath("/refunds");
+  revalidatePath("/refunds", "layout");
   return result;
 }
 
@@ -27,7 +27,7 @@ export async function claimRefundAction(_prev: OperationResult | null, formData:
     assignee: formData.get("assignee") ?? "",
     note: formData.get("note") ?? "",
   });
-  revalidatePath("/refunds");
+  revalidatePath("/refunds", "layout");
   return result;
 }
 
@@ -36,6 +36,6 @@ export async function bulkProcessRefundsAction(_prev: OperationResult | null, fo
     refundIds: formData.getAll("refundIds"),
     note: formData.get("note") ?? "",
   });
-  revalidatePath("/refunds");
+  revalidatePath("/refunds", "layout");
   return result.ok ? { ok: true, message: result.message } : { ok: false, code: result.code, message: result.message };
 }

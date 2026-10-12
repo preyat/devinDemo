@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
+import { useState } from "react";
 import { Alert } from "react-bootstrap";
-import { Check, MessageSquareMore, X } from "lucide-react";
+import { ArrowRight, Check, MessageSquareMore, X } from "lucide-react";
 import { DecisionForm, type DecisionOption } from "@/components/DecisionForm";
 import type { KycDecision } from "@/server/kyc/service";
 import { decideKycAction } from "./actions";
@@ -20,12 +22,23 @@ interface Props {
   approvalBlockedReason: string | null;
   canDecide: boolean;
   finalStatusLabel: string;
+  /** Next case in the reviewer's filtered queue, offered after a successful decision. */
+  nextHref?: string | null;
 }
 
-export function KycDecisionForm({ customerId, allowed, approvalBlockedReason, canDecide, finalStatusLabel }: Props) {
+export function KycDecisionForm({ customerId, allowed, approvalBlockedReason, canDecide, finalStatusLabel, nextHref }: Props) {
+  // Freeze the pre-decision "next": a decision can re-sort the queue (e.g. by updated date) and move this record.
+  const [nextAfterDecision] = useState(nextHref);
   return (
     <DecisionForm
       action={decideKycAction}
+      successAction={
+        nextAfterDecision && (
+          <Link href={nextAfterDecision} className="btn btn-primary btn-sm" data-testid="next-case-after-decision">
+            Next case <ArrowRight size={16} />
+          </Link>
+        )
+      }
       fields={{ customerId }}
       options={allowed.map((d) => OPTIONS[d])}
       noteLabel="Decision note (required). For information requests, state what the customer must provide."

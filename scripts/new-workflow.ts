@@ -186,8 +186,9 @@ import { PageHeader } from "@/components/PageHeader";
 
 export const dynamic = "force-dynamic";
 
-// TODO: compose SummaryCards, QueueFilters, QueueTable (getRowHref), QueuePagination and RecordDetail
-// with ${Name}DecisionForm, mirroring src/app/kyc/page.tsx. Read data via src/server/lookups.ts.
+// TODO: queue page (SummaryCards, QueueFilters, QueueTable with getRowHref → /${slug}/<id>, QueuePagination) plus a
+// case page at src/app/${slug}/[id]/page.tsx (RecordNav, RecordTabs, RecordFields, ${Name}DecisionForm),
+// mirroring src/app/kyc/page.tsx and src/app/kyc/[customerId]/page.tsx. Read data via src/server/lookups.ts.
 export default async function ${Name}Page() {
   return (
     <>

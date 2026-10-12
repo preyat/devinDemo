@@ -27,17 +27,20 @@ interface DecisionFormProps {
   notice?: ReactNode;
   /** When set, the record is read-only: show this instead of the form controls. */
   readOnlyMessage?: string;
+  /** Shown beside a successful result, e.g. a "Next case" link. */
+  successAction?: ReactNode;
 }
 
 /**
  * Generic note + decision buttons form. Validation and rules live in the server action's service;
  * this component only renders the OperationResult.
  */
-export function DecisionForm({ action, fields, options, noteLabel, notePlaceholder, noteId = "decision-note", extraFields, notice, readOnlyMessage }: DecisionFormProps) {
+export function DecisionForm({ action, fields, options, noteLabel, notePlaceholder, noteId = "decision-note", extraFields, notice, readOnlyMessage, successAction }: DecisionFormProps) {
   const [result, formAction, pending] = useActionState(action, null);
   return (
     <Form action={formAction}>
       <OperationFeedback result={result} />
+      {result?.ok && successAction && <div className="mb-3">{successAction}</div>}
       {readOnlyMessage ? (
         <p className="small text-muted mb-0" data-testid="read-only">{readOnlyMessage}</p>
       ) : (

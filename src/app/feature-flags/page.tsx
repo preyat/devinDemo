@@ -108,7 +108,7 @@ function FlagDetail({ flagKey, canToggle }: { flagKey: string; canToggle: boolea
           {affected.length === 0
             ? "no pending refunds."
             : affected.map((e) => (
-                <Link key={e.refund!.id} href={`/refunds?refund=${e.refund!.id}`} className="me-2">
+                <Link key={e.refund!.id} href={`/refunds/${e.refund!.id}`} className="me-2">
                   {e.refund!.id}
                 </Link>
               ))}

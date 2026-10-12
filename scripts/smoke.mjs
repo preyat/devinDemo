@@ -51,8 +51,9 @@ const checks = [
       await page.click("button[aria-label=Search]");
       await page.waitForURL(/q=samira/);
       await page.locator("[data-testid=row-cus_samira_patel] td").nth(3).click();
-      await page.waitForURL(/customer=cus_samira_patel/);
+      await page.waitForURL(/\/kyc\/cus_samira_patel\?.*q=samira/);
       assert.match(await page.textContent("[data-testid=case-reason]"), /Periodic refresh/);
+      assert.match(await page.getAttribute("[data-testid=back-to-queue]", "href"), /status=pending.*q=samira|q=samira.*status=pending/);
     },
   },
   {
@@ -76,7 +77,7 @@ const checks = [
       await page.goto(`${BASE}/refunds`);
       assert.match(await page.textContent("[data-testid=blocked-ref_maya_750]"), /KYC_NOT_APPROVED/);
       await page.locator("[data-testid=row-ref_maya_750] td").first().click();
-      await page.waitForURL(/refund=ref_maya_750/);
+      await page.waitForURL(/\/refunds\/ref_maya_750/);
       assert.match(await page.textContent("[data-testid=eligibility]"), /refunds are blocked for unverified customers/);
       assert.match(await decide(page, "process", "Trying anyway"), /rule_violation.*KYC_NOT_APPROVED/);
       await page.reload();
@@ -92,22 +93,24 @@ const checks = [
     },
   },
   {
-    name: "KYC: Maya needs a note, then approves and becomes read-only",
+    name: "KYC: Maya needs a note, approves, becomes read-only, Next case opens",
     async run(page) {
       await setRole(page, "kyc_reviewer");
-      await page.goto(`${BASE}/kyc?customer=cus_maya_reed`);
+      await page.goto(`${BASE}/kyc/cus_maya_reed?status=pending`);
       assert.equal(await page.locator("[data-testid=approval-blocked]").count(), 0);
       assert.match(await decide(page, "approve", " "), /validation/);
       assert.match(await decide(page, "approve", "Passport and utility bill verified."), /KYC approved for Maya Reed/);
-      await page.reload();
       assert.match(await page.textContent("[data-testid=read-only]"), /read-only/);
+      await page.click("[data-testid=next-case-after-decision]");
+      await page.waitForURL((url) => /\/kyc\/cus_/.test(url.pathname) && !url.pathname.endsWith("cus_maya_reed"));
+      assert.match(page.url(), /status=pending/);
     },
   },
   {
     name: "KYC: Samira approval blocked, request info succeeds",
     async run(page) {
       await setRole(page, "kyc_reviewer");
-      await page.goto(`${BASE}/kyc?customer=cus_samira_patel`);
+      await page.goto(`${BASE}/kyc/cus_samira_patel`);
       assert.match(await page.textContent("[data-testid=approval-blocked]"), /proof of address is missing/);
       assert.match(await decide(page, "approve", "Trying to approve"), /rule_violation/);
       assert.match(await decide(page, "request_info", "Provide a bank statement dated within 3 months."), /More information requested/);
@@ -119,7 +122,7 @@ const checks = [
     name: "KYC: Payments Operator is forbidden by the backend",
     async run(page) {
       await setRole(page, "payments_operator");
-      await page.goto(`${BASE}/kyc?customer=cus_hannah_schmidt`);
+      await page.goto(`${BASE}/kyc/cus_hannah_schmidt`);
       assert.match(await decide(page, "approve", "attempt"), /forbidden/);
       await setRole(page, "kyc_reviewer");
     },
@@ -128,7 +131,7 @@ const checks = [
     name: "Refunds: approved Maya is eligible, processes once; a stale second submit gets ALREADY_REFUNDED",
     async run(page) {
       await setRole(page, "payments_operator");
-      const url = `${BASE}/refunds?refund=ref_maya_750`;
+      const url = `${BASE}/refunds/ref_maya_750`;
       await page.goto(url);
       assert.equal(await page.locator("[data-testid=blocked-notice]").count(), 0);
       const stale = await page.context().newPage();
@@ -136,8 +139,10 @@ const checks = [
       assert.match(await decide(page, "process", "Refund to original card."), /Refund ref_maya_750 of \$750\.00 processed/);
       assert.match(await decide(stale, "process", "Double submit"), /invalid_transition.*ALREADY_REFUNDED/);
       await stale.close();
-      await page.goto(`${BASE}/refunds?status=processed&refund=ref_maya_750`);
+      await page.goto(`${BASE}/refunds/ref_maya_750?status=processed`);
       assert.match(await page.textContent("[data-testid=read-only]"), /read-only/);
+      await page.click("[data-testid=back-to-queue]");
+      await page.waitForURL(/\/refunds\?status=processed/);
       assert.equal(await page.locator("[data-testid=row-ref_maya_750]").count(), 1);
     },
   },
@@ -147,11 +152,11 @@ const checks = [
       await setRole(page, "payments_operator");
       await page.goto(`${BASE}/refunds?status=processed`);
       await page.locator("[data-testid=row-ref_jordan_420] td").first().click();
-      await page.waitForURL(/refund=ref_jordan_420/);
+      await page.waitForURL(/\/refunds\/ref_jordan_420/);
       assert.match(await page.textContent("[data-testid=eligibility]"), /already processed/);
       assert.match(await page.textContent("[data-testid=read-only]"), /read-only/);
       await setRole(page, "kyc_reviewer");
-      await page.goto(`${BASE}/refunds?refund=ref_alex_350`);
+      await page.goto(`${BASE}/refunds/ref_alex_350`);
       assert.match(await page.textContent("[data-testid=role-notice]"), /refund\.process/);
       assert.match(await decide(page, "process", "attempt"), /forbidden.*ROLE_NOT_PERMITTED/);
       await setRole(page, "kyc_reviewer");
@@ -161,13 +166,13 @@ const checks = [
     name: "Refunds queue actions: partial refund, claim + reject, bulk process",
     async run(page) {
       await setRole(page, "payments_operator");
-      await page.goto(`${BASE}/refunds?refund=ref_alex_350`);
+      await page.goto(`${BASE}/refunds/ref_alex_350`);
       assert.match(await decide(page, "process", "Goodwill partial", { amount: "120.50" }), /partial refund of \$120\.50 \(of \$350\.00 requested\)/);
-      await page.goto(`${BASE}/refunds?refund=ref_ben_180_dup`);
+      await page.goto(`${BASE}/refunds/ref_ben_180_dup`);
       assert.match(await decide(page, "claim", "Looking into it", { assignee: "Sam R." }), /claimed by Sam R\./);
       await page.goto(`${BASE}/refunds?assigned=claimed`);
       assert.equal(await page.locator("[data-testid=row-ref_ben_180_dup]").count(), 1);
-      await page.goto(`${BASE}/refunds?refund=ref_ben_180_dup`);
+      await page.goto(`${BASE}/refunds/ref_ben_180_dup`);
       assert.match(await decide(page, "reject", "Duplicate of ref_ben_180"), /rejected for Ben Carter\. No money moved/);
       await page.goto(`${BASE}/refunds`);
       const selected = await page.locator("[data-testid=bulk-list] input:checked").count();
