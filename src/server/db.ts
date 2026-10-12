@@ -40,9 +40,14 @@ export function getDb(): Db {
   if (!globalForDb.portalDb) {
     const file = defaultDbPath();
     const db = openDb(file);
-    if (db.pragma("user_version", { simple: true }) !== SCHEMA_VERSION) {
-      assertResettableDemoDb(db, file);
-      resetDb(db);
+    try {
+      if (db.pragma("user_version", { simple: true }) !== SCHEMA_VERSION) {
+        assertResettableDemoDb(db, file);
+        resetDb(db);
+      }
+    } catch (err) {
+      db.close();
+      throw err;
     }
     globalForDb.portalDb = db;
   }

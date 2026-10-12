@@ -231,6 +231,15 @@ describe("demo reset guard", () => {
     expect(() => assertResettableDemoDb(prod, other)).toThrow(DemoResetRefusedError);
     prod.close();
 
+    const legacyPath = path.join(tmp, "legacy.db");
+    process.env.DEMO_DB_PATH = legacyPath;
+    const unmarked = openDb(legacyPath);
+    unmarked.exec("CREATE TABLE ledger (id INTEGER PRIMARY KEY); INSERT INTO ledger VALUES (1);");
+    unmarked.pragma("user_version = 5");
+    expect(() => assertResettableDemoDb(unmarked, legacyPath)).toThrow(/no demo environment marker/);
+    unmarked.close();
+    process.env.DEMO_DB_PATH = demoPath;
+
     const demo = openDb(demoPath);
     resetDb(demo);
     process.env.PORTAL_ENV = "production";
