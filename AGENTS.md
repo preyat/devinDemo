@@ -50,8 +50,9 @@ Dashio-derived theme (Inter font, sidebar layout, light/dark) · lucide-react ·
 | `src/styles/_variables.scss` | Bootstrap variable overrides (colours, Inter, radii, shadows, `$sidebar-width`), adapted from Dashio (MIT). |
 | `src/styles/portal.scss` | Imports Bootstrap SCSS + light/dark tokens + sidebar/header layout. The only global stylesheet. |
 | `src/app/page.tsx` | Home: workflow cards from `src/lib/workflows.ts`. |
-| `src/app/kyc/page.tsx` | KYC Review (server component): summary cards, filtered/paginated queue, case panel (profile, risk, verification, decision, history, transactions, refunds, audit). |
-| `src/app/kyc/actions.ts` | `"use server"` adapter: `decideKycAction` → `decideKyc`, then `revalidatePath`. |
+| `src/app/kyc/page.tsx` | KYC queue (server component): summary cards, URL-driven filters, full-width paginated queue; rows open `/kyc/<id>` carrying the queue params. Legacy `?customer=` redirects. |
+| `src/app/kyc/[customerId]/page.tsx` | KYC case page: `RecordNav` (back to filtered queue, prev/next), header (status, risk, review type, why open), `RecordTabs` Overview (profile, risk, checks, decision) / Activity (transactions, refunds) / History (decisions, audit). |
+| `src/app/kyc/actions.ts` | `"use server"` adapter: `decideKycAction` → `decideKyc`, then `revalidatePath("/kyc", "layout")` (covers case pages). |
 | `src/app/kyc/KycDecisionForm.tsx` | Client wrapper configuring `DecisionForm` with KYC buttons/icons and the blocked-approval notice. |
 | `src/app/actions/role.ts` | `setDemoRole` server action (writes `demo_role` cookie). |
 | `src/components/PortalShell.tsx` | Client app chrome: sidebar nav from `WORKFLOWS` (active state, "Soon" for unavailable, mobile off-canvas) + sticky header with `DemoRoleSelector` and `ThemeToggle`. |
@@ -61,9 +62,11 @@ Dashio-derived theme (Inter font, sidebar layout, light/dark) · lucide-react ·
 | `src/components/QueueFilters.tsx` | Client, URL-driven search box + select filters; any change resets `page`. |
 | `src/components/QueuePagination.tsx` | Client prev/next/page links preserving other URL params + "Showing x–y of n". |
 | `src/components/SummaryCards.tsx` | Row of metric cards (`label`, `value`, `variant`). |
-| `src/components/RecordDetail.tsx` | Card with label/value list + `children` slot. |
+| `src/components/RecordDetail.tsx` | `RecordFields` (label/value list) and `RecordDetail` (card wrapping it + `children`). |
+| `src/components/RecordTabs.tsx` | Client tabs for a record page; server-rendered tab content passed as props. |
+| `src/components/RecordNav.tsx` | Case-page nav: back to filtered queue, "x of n", previous/next links. |
 | `src/components/VerificationChecklist.tsx` | List of `{ label, status, detail }` with `StatusBadge`. |
-| `src/components/DecisionForm.tsx` | Client generic note + decision buttons form bound to a server action returning `OperationResult`; `notice`, `readOnlyMessage`. |
+| `src/components/DecisionForm.tsx` | Client generic note + decision buttons form bound to a server action returning `OperationResult`; `notice`, `readOnlyMessage`, `successAction` (e.g. "Next case"). |
 | `src/components/StatusBadge.tsx` | Status → Bootstrap colour + label (`statusLabel`). |
 | `src/components/OperationFeedback.tsx` | Renders an `OperationResult` as success/danger alert. |
 | `src/components/PageHeader.tsx` | Page title + description. |
@@ -76,7 +79,7 @@ Dashio-derived theme (Inter font, sidebar layout, light/dark) · lucide-react ·
 | `src/server/schema.ts` | All DDL, `SCHEMA_VERSION`, `TABLES` (drop order). |
 | `src/server/seed-data.ts` | Hand-written synthetic customers (status, risk, scenario, history). |
 | `src/server/seed.ts` | Expands seed-data into rows; deterministic PRNG for transactions/refunds; `SEED_IDS`, `SEED_TIMESTAMP`, `KYC_RESTRICTION_FLAG`. |
-| `src/server/lookups.ts` | Read-only queries + row types: customers (`searchCustomers`, `parseCustomerQuery`, `getKycSummary`), checks, decisions, transactions, refunds, `getFeatureFlag`. |
+| `src/server/lookups.ts` | Read-only queries + row types: customers (`searchCustomers`, `parseCustomerQuery`, `getCustomerQueueNeighbours`, `getKycSummary`), checks, decisions, transactions, refunds, `getFeatureFlag`. |
 | `src/server/roles.ts` | `ROLES`, `ROLE_LABELS`, `parseRoleClaim` (untrusted claim parsing). |
 | `src/server/permissions.ts` | `PERMISSIONS` policy map, `can`, `assertCan`. |
 | `src/server/errors.ts` | `OperationError(code, message)` — expected failures. |

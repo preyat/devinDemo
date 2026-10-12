@@ -23,7 +23,7 @@ Prints `PASS`/`FAIL` per check; failures save `smoke-failure-<n>.png` (git-ignor
 `#demo-role`, `#queue-search`, `#filter-<name>`, `[data-testid=queue-range]`, `[data-testid="summary-<label>"]`,
 `[data-testid=row-<id>]` (whole row clickable), `#decision-note`, `button[name=decision][value=<decision>]`,
 `[data-testid=operation-feedback]` (`.alert-success`/`.alert-danger`), `[data-testid=approval-blocked]`,
-`[data-testid=read-only]`, `[data-testid=case-reason]`, `[data-testid=info-requested]`, `[data-testid=check-<label>]`.
+`[data-testid=read-only]`, `[data-testid=case-reason]`, `[data-testid=info-requested]`, `[data-testid=check-<label>]`, case page: `[data-testid=back-to-queue]`, `[data-testid=queue-position]`, `[data-testid=prev-record]`, `[data-testid=next-record]`, `[data-testid=next-case-after-decision]`.
 Add `data-testid`s to new components instead of relying on text or position.
 
 ## Extend for a new workflow

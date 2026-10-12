@@ -25,7 +25,7 @@ Map every item to an existing building block; only invent new ones if nothing fi
 ## Decision inputs — fields + Zod validation; note always required.
 ## Audit — action names `<key>.<verb>`, entity_type, success details.
 ## Queue — columns, filters, sort, summary cards.
-## Detail panel — sections (RecordDetail, VerificationChecklist, history, related records).
+## Case page — header (status, why it needs attention) and tabs: Overview (fields, checks, decision), Activity (related records), History (decisions, audit).
 ## Seed scenarios — named demo records that must exist, plus existing ones that must stay intact (README table).
 ## Tests — success+persistence, each forbidden role, invalid transition, each rule violation, validation, audit rows.
 ## Smoke — browser flows to add to scripts/smoke.mjs.

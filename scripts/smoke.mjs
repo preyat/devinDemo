@@ -46,27 +46,30 @@ const checks = [
       await page.click("button[aria-label=Search]");
       await page.waitForURL(/q=samira/);
       await page.locator("[data-testid=row-cus_samira_patel] td").nth(3).click();
-      await page.waitForURL(/customer=cus_samira_patel/);
+      await page.waitForURL(/\/kyc\/cus_samira_patel\?.*q=samira/);
       assert.match(await page.textContent("[data-testid=case-reason]"), /Periodic refresh/);
+      assert.match(await page.getAttribute("[data-testid=back-to-queue]", "href"), /status=pending.*q=samira|q=samira.*status=pending/);
     },
   },
   {
-    name: "KYC: Maya needs a note, then approves and becomes read-only",
+    name: "KYC: Maya needs a note, approves, becomes read-only, Next case opens",
     async run(page) {
       await setRole(page, "kyc_reviewer");
-      await page.goto(`${BASE}/kyc?customer=cus_maya_reed`);
+      await page.goto(`${BASE}/kyc/cus_maya_reed?status=pending`);
       assert.equal(await page.locator("[data-testid=approval-blocked]").count(), 0);
       assert.match(await decide(page, "approve", " "), /validation/);
       assert.match(await decide(page, "approve", "Passport and utility bill verified."), /KYC approved for Maya Reed/);
-      await page.reload();
       assert.match(await page.textContent("[data-testid=read-only]"), /read-only/);
+      await page.click("[data-testid=next-case-after-decision]");
+      await page.waitForURL((url) => /\/kyc\/cus_/.test(url.pathname) && !url.pathname.endsWith("cus_maya_reed"));
+      assert.match(page.url(), /status=pending/);
     },
   },
   {
     name: "KYC: Samira approval blocked, request info succeeds",
     async run(page) {
       await setRole(page, "kyc_reviewer");
-      await page.goto(`${BASE}/kyc?customer=cus_samira_patel`);
+      await page.goto(`${BASE}/kyc/cus_samira_patel`);
       assert.match(await page.textContent("[data-testid=approval-blocked]"), /proof of address is missing/);
       assert.match(await decide(page, "approve", "Trying to approve"), /rule_violation/);
       assert.match(await decide(page, "request_info", "Provide a bank statement dated within 3 months."), /More information requested/);
@@ -78,7 +81,7 @@ const checks = [
     name: "KYC: Payments Operator is forbidden by the backend",
     async run(page) {
       await setRole(page, "payments_operator");
-      await page.goto(`${BASE}/kyc?customer=cus_hannah_schmidt`);
+      await page.goto(`${BASE}/kyc/cus_hannah_schmidt`);
       assert.match(await decide(page, "approve", "attempt"), /forbidden/);
       await setRole(page, "kyc_reviewer");
     },

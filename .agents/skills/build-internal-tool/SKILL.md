@@ -30,9 +30,14 @@ Reference implementation: KYC Review. Copy its shape; do not invent new layers o
      Keep seed deterministic and preserve the demo customers listed in `README.md`.
 4. **Tests** — `tests/<workflow>.test.ts` with `createTestDb()`: success + persisted state, each forbidden role,
    invalid transition, rule violation, validation error, success/denied audit rows (`listAuditEvents`). Run `npm test`.
-5. **UI** — reuse `src/components/`: `PageHeader`, `SummaryCards`, `QueueFilters`, `QueueTable`, `QueuePagination`,
-   `RecordDetail`, `VerificationChecklist`, `StatusBadge`, `DecisionForm` (+ `OperationFeedback` inside it).
-   Thin `"use server"` action calling the service with `getDb()` + `getDemoRole()`, then `revalidatePath`.
+5. **UI** — queue page + case page, like `src/app/kyc/page.tsx` and `src/app/kyc/[customerId]/page.tsx`
+   (user feedback: a side panel next to the queue felt cramped; reviewers want a focused case page).
+   Queue: `PageHeader`, `SummaryCards`, `QueueFilters`, full-width `QueueTable` with rows linking to
+   `/<workflow>/<id>` + current queue params, `QueuePagination`. Case: `RecordNav` (back/prev/next via a
+   neighbours lookup sharing the queue's WHERE + ORDER BY), header card with status and why it needs attention,
+   `RecordTabs` (Overview incl. decision form / Activity / History+audit), `RecordFields`, `VerificationChecklist`,
+   `StatusBadge`, `DecisionForm` (+ `OperationFeedback`; pass `successAction` = Next link).
+   Thin `"use server"` action calling the service with `getDb()` + `getDemoRole()`, then `revalidatePath("/<workflow>", "layout")`.
    Build row links with `withParams` (`src/lib/url.ts`). In server components use `CardHeader`/`CardBody`
    (not `Card.Header`); pass icons only from client components. Set `available: true` (and an `icon`) in
    `src/lib/workflows.ts` so the sidebar links it. Style with Bootstrap utilities; theme tokens live in `src/styles/`.

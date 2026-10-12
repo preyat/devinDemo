@@ -126,7 +126,7 @@ export function parseCustomerQuery(raw: Record<string, string | string[] | undef
   });
 }
 
-export function searchCustomers(db: Db, query: CustomerQuery): { rows: Customer[]; total: number; page: number } {
+function customerWhere(query: CustomerQuery): { whereSql: string; params: Record<string, string | number> } {
   const where: string[] = [];
   const params: Record<string, string | number> = {};
   if (query.q) {
@@ -146,7 +146,11 @@ export function searchCustomers(db: Db, query: CustomerQuery): { rows: Customer[
     where.push("review_type = @review");
     params.review = query.review;
   }
-  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  return { whereSql: where.length ? `WHERE ${where.join(" AND ")}` : "", params };
+}
+
+export function searchCustomers(db: Db, query: CustomerQuery): { rows: Customer[]; total: number; page: number } {
+  const { whereSql, params } = customerWhere(query);
   const { total } = db.prepare(`SELECT COUNT(*) AS total FROM customers ${whereSql}`).get(params) as { total: number };
   const page = Math.min(query.page, Math.max(1, Math.ceil(total / query.pageSize)));
   const rows = db
@@ -156,6 +160,26 @@ export function searchCustomers(db: Db, query: CustomerQuery): { rows: Customer[
     )
     .all({ ...params, limit: query.pageSize, offset: (page - 1) * query.pageSize }) as Customer[];
   return { rows, total, page };
+}
+
+export interface QueueNeighbours {
+  /** 1-based position in the filtered queue, or null if the record no longer matches the filters. */
+  position: number | null;
+  total: number;
+  prevId: string | null;
+  /** Next record after this one; if it dropped out of the filters (e.g. just decided), the first remaining. */
+  nextId: string | null;
+}
+
+/** Prev/next navigation for a case page, using the same filters and sort as the queue. */
+export function getCustomerQueueNeighbours(db: Db, query: CustomerQuery, id: string): QueueNeighbours {
+  const { whereSql, params } = customerWhere(query);
+  const ids = (
+    db.prepare(`SELECT id FROM customers ${whereSql} ORDER BY ${CUSTOMER_SORTS[query.sort]}, id`).all(params) as { id: string }[]
+  ).map((r) => r.id);
+  const idx = ids.indexOf(id);
+  if (idx === -1) return { position: null, total: ids.length, prevId: null, nextId: ids[0] ?? null };
+  return { position: idx + 1, total: ids.length, prevId: ids[idx - 1] ?? null, nextId: ids[idx + 1] ?? null };
 }
 
 export function getKycSummary(db: Db): { pending: number; infoRequested: number; highRiskOpen: number; total: number } {
