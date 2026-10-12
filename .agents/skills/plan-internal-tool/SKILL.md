@@ -26,7 +26,7 @@ Map every item to an existing building block; only invent new ones if nothing fi
 ## Audit — action names `<key>.<verb>`, entity_type, success details.
 ## Queue — columns, filters, sort, summary cards.
 ## Case page — header (status, why it needs attention) and tabs: Overview (fields, checks, decision), Activity (related records), History (decisions, audit).
-## Seed scenarios — named demo records that must exist, plus existing ones that must stay intact (README table).
+## Seed scenarios — named demo records that must exist, plus existing ones that must stay intact (`docs/demo.md` tables).
 ## Tests — success+persistence, each forbidden role, invalid transition, each rule violation, validation, audit rows.
 ## Smoke — browser flows to add to scripts/smoke.mjs.
 ## Out of scope — what is deliberately not built.

@@ -33,7 +33,7 @@ grep -rLn "runAuditedOperation" src/server/*/service.ts   # every service mutate
       duplicated rule logic in components; hidden/disabled buttons are hints only.
 - [ ] New permission in `PERMISSIONS`; audit actions named `<key>.<verb>`; every decision requires a note; terminal states read-only.
 - [ ] Tests: success+persistence, each forbidden role, invalid transition, each rule violation, validation, audit rows.
-- [ ] Seed changes keep `tests/seed.test.ts` invariants and the README demo customers intact; reset is deterministic.
+- [ ] Seed changes keep `tests/seed.test.ts` invariants and the demo customers in `docs/demo.md` intact; reset is deterministic.
 - [ ] UI uses `src/components/`, Bootstrap utilities, `CardHeader`/`CardBody` in server components, no constants imported
       from `"use client"` modules into server code; nav entry has `available: true` + `icon`.
 - [ ] Smoke check added to `scripts/smoke.mjs`.

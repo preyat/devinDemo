@@ -28,4 +28,4 @@ Files: `src/server/schema.ts` (DDL, `SCHEMA_VERSION`, `TABLES`), `src/server/see
    Fixed demo rows are inserted explicitly; generated rows use `rng()`.
 3. Add invariants/scenario assertions to `tests/seed.test.ts` (keep the determinism test).
 4. `npm test && npm run db:reset`; restart `npm run dev` after a `SCHEMA_VERSION` bump.
-5. Update the README seed table and the AGENTS.md data model.
+5. Update the seed tables in `docs/demo.md` and the AGENTS.md data model.

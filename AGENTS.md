@@ -200,6 +200,7 @@ review_type `onboarding | periodic_refresh | triggered` + review_reason + review
 
 Use `.agents/skills/update-docs/SKILL.md` after any change. To add a workflow, use
 `.agents/skills/build-internal-tool/SKILL.md`.
+Reviewer walkthroughs and the seed scenario tables live in `docs/demo.md`; README keeps only a short quick demo.
 - Seeds that need realistic *decided* state (e.g. Priya's escalated alert) should call the real service with a fixed
   `now` (`runAuditedOperation` accepts `now`), so holds, history and audit rows match live behaviour exactly.
 - Smoke checks share one DB in order: a check that escalates Alex's alert blocks `ref_alex_350` for every later check.

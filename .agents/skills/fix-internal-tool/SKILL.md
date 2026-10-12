@@ -39,7 +39,7 @@ Fraud Operations (`FRAUD_ALERT_TRANSITIONS` + `decideFraudAlert`; escalation hol
    `.agents/skills/review-internal-tool/SKILL.md` (each prints nothing); `npm run dev` + `npm run smoke` for any change
    reachable from the UI (smoke checks share DB state in order — a fix in one workflow can shift later checks).
    `npm run db:reset` afterwards (alias of the guarded `demo:reset`; it refuses non-demo DBs — never bypass the guard).
-6. **Docs** — `update-docs` (only what changed: rules table, README scenarios, AGENTS.md) + `capture-session-learnings`
+6. **Docs** — `update-docs` (only what changed: rules table, `docs/demo.md` scenarios, AGENTS.md) + `capture-session-learnings`
    (add the root cause / gotcha to the relevant skill or AGENTS.md if it could recur).
 7. **PR** — branch `devin/<timestamp>-fix-<slug>`; never commit `data/*.db` or screenshots. PR body: bug + repro
    (failing test name / smoke check), root cause and layer, fix, invariants checked, commands + results, limitations.
