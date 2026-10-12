@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { decideKyc } from "@/server/kyc/service";
-import { getCustomerQueueNeighbours, parseCustomerQuery, searchCustomers } from "@/server/lookups";
+import {
+  getCustomerQueueNeighbours,
+  getRefundQueueNeighbours,
+  parseCustomerQuery,
+  parseRefundQuery,
+  searchCustomers,
+  searchRefunds,
+} from "@/server/lookups";
 import { createTestDb } from "./helpers";
 
 describe("getCustomerQueueNeighbours", () => {
@@ -27,5 +34,22 @@ describe("getCustomerQueueNeighbours", () => {
     const remaining = searchCustomers(db, query);
     const nav = getCustomerQueueNeighbours(db, query, "cus_maya_reed");
     expect(nav).toMatchObject({ position: null, prevId: null, total: remaining.total, nextId: remaining.rows[0].id });
+  });
+});
+
+describe("getRefundQueueNeighbours", () => {
+  it("follows the refund queue's filters and sort", () => {
+    const db = createTestDb();
+    const query = parseRefundQuery({ status: "all", sort: "amount_desc", pageSize: "50" });
+    const ids = searchRefunds(db, query).rows.map((r) => r.id);
+    const idx = ids.indexOf("ref_maya_750");
+    expect(idx).toBeGreaterThan(0);
+    expect(getRefundQueueNeighbours(db, query, "ref_maya_750")).toEqual({
+      position: idx + 1,
+      total: ids.length,
+      prevId: ids[idx - 1],
+      nextId: ids[idx + 1] ?? null,
+    });
+    expect(getRefundQueueNeighbours(db, parseRefundQuery({ status: "pending" }), "ref_jordan_420").position).toBeNull();
   });
 });

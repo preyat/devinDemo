@@ -2,14 +2,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Db } from "@/server/db";
 import { isKycRestricted } from "@/server/kyc/eligibility";
 import { decideKyc } from "@/server/kyc/service";
-import { KYC_RESTRICTION_FLAG, SEED_IDS } from "@/server/seed";
+import { BLOCK_REFUNDS_UNVERIFIED_KYC } from "@/server/feature-flags/definitions";
+import { SEED_IDS } from "@/server/seed";
 import { createTestDb } from "./helpers";
 
 describe("isKycRestricted (shared gate for refunds)", () => {
   let db: Db;
   beforeEach(() => (db = createTestDb()));
   afterEach(() => db.close());
-  const setFlag = (on: boolean) => db.prepare("UPDATE feature_flags SET enabled = ? WHERE key = ?").run(on ? 1 : 0, KYC_RESTRICTION_FLAG);
+  const setFlag = (on: boolean) => db.prepare("UPDATE feature_flags SET enabled = ? WHERE key = ?").run(on ? 1 : 0, BLOCK_REFUNDS_UNVERIFIED_KYC);
 
   it("restricts nobody while the flag is OFF", () => {
     expect(isKycRestricted(db, SEED_IDS.maya)).toBe(false);

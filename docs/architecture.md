@@ -8,13 +8,13 @@ flowchart LR
   subgraph Browser
     Sel[DemoRoleSelector] -->|setDemoRole| RoleAct
     Filters["QueueFilters / QueuePagination<br/>(URL params)"] -->|GET /kyc?status=&risk=&q=&page=| Page
-    Form["KycDecisionForm → DecisionForm<br/>useActionState"] -->|FormData| KycAct
+    Form["KycDecisionForm / ProcessRefundForm / ToggleFlagForm<br/>→ DecisionForm (useActionState)"] -->|FormData| Acts
   end
 
   subgraph "Next.js server (src/app)"
     Layout[layout.tsx + PortalShell]
-    Page["kyc/page.tsx<br/>(server component)"]
-    KycAct["kyc/actions.ts<br/>decideKycAction"]
+    Page["kyc · refunds · feature-flags<br/>page.tsx (server components)"]
+    Acts["*/actions.ts<br/>decideKycAction · processRefundAction<br/>toggleFeatureFlagAction"]
     RoleAct["actions/role.ts<br/>setDemoRole"]
     Session["lib/session.ts<br/>getDemoRole (cookie)"]
   end
@@ -22,22 +22,32 @@ flowchart LR
   subgraph "Domain (src/server, framework-free)"
     Svc["kyc/service.ts<br/>decideKyc · allowedKycDecisions<br/>getApprovalBlockers"]
     Elig["kyc/eligibility.ts<br/>isKycRestricted"]
+    Ref["refunds/service.ts<br/>canProcessRefund · REFUND_RULES<br/>processRefund"]
+    Flags["feature-flags/service.ts<br/>isFeatureEnabled · toggleFeatureFlag<br/>(definitions.ts registry)"]
     Op["operation.ts<br/>runAuditedOperation"]
     Perm[permissions.ts]
-    Look["lookups.ts<br/>searchCustomers · getKycSummary<br/>checks · decisions · txns · refunds"]
+    Look["lookups.ts<br/>searchCustomers · searchRefunds · getRefund<br/>txns · payouts · listFeatureFlags"]
     Audit[audit.ts]
     DB["db.ts<br/>getDb / openDb / resetDb"]
   end
 
-  SQLite[("data/portal.db<br/>customers · verification_checks · kyc_decisions<br/>transactions · refunds · feature_flags<br/>risk_holds · audit_events")]
+  SQLite[("data/portal.db<br/>customers · verification_checks · kyc_decisions<br/>transactions · refunds · refund_payouts<br/>feature_flags · risk_holds · audit_events")]
 
   Page --> Session
   Page --> Look
   Page --> Audit
   Page -->|"same rule helpers for display"| Svc
-  KycAct --> Session
-  KycAct --> Svc
+  Page -->|"canProcessRefund for badges/checklist"| Ref
+  Acts --> Session
+  Acts --> Svc
+  Acts --> Ref
+  Acts --> Flags
   Svc --> Op
+  Ref --> Op
+  Flags --> Op
+  Ref --> Elig
+  Ref --> Flags
+  Elig --> Flags
   Op -->|1 assertCan| Perm
   Op -->|"2 validate · transition · blockers<br/>3 UPDATE + kyc_decisions + audit success (one txn)"| DB
   Op -->|on OperationError: audit denied| Audit
@@ -48,6 +58,8 @@ flowchart LR
   Reset["scripts/db-reset.ts<br/>seed.ts + seed-data.ts"] --> DB
   Tests["tests/*.test.ts<br/>createTestDb(:memory:)"] --> Svc
   Tests --> Elig
+  Tests --> Ref
+  Tests --> Flags
 ```
 
 ## Request flow (KYC decision)
@@ -76,17 +88,58 @@ Each customer row carries `review_type` (`onboarding | periodic_refresh | trigge
 why the case is in the queue. Onboarding applicants have no account activity until approved; re-reviews are existing
 customers (history shows the original `approve` and a `system` `open_review` row) and keep their transactions/refunds.
 
-`isKycRestricted(db, customerId)` — when flag `kyc_restriction` is ON, any customer whose current status is not
-`approved` (including `info_requested`) is restricted. Refunds (Session 2) should call it.
+`isKycRestricted(db, customerId)` — when flag `block_refunds_unverified_kyc` is ON, any customer whose current status is
+not `approved` (including `info_requested`) is restricted. Used by the Refunds `KYC_NOT_APPROVED` rule.
 
-## Adding another workflow (e.g. Refunds)
+## Refunds
 
+`src/server/refunds/service.ts` holds the **only** refund eligibility logic:
+
+- `REFUND_RULES` — ordered list of `{ code, label, errorCode, check(ctx) }`. Order is error precedence
+  (`forbidden` → `invalid_transition` → `rule_violation`).
+- `canProcessRefund(db, role, refundId)` → `{ eligible, refund, checks[], reasons[{code,message}], errorCode }`.
+  The page uses it for the queue "Eligibility" badges, the detail checklist and summary counts; `processRefund` uses it
+  for enforcement. `businessBlockers()` drops `ROLE_NOT_PERMITTED` for "what any operator would hit" displays.
+- `processRefund(db, role, { refundId, note })` inside `runAuditedOperation`: Zod → `canProcessRefund` (throws
+  `OperationError(errorCode, message, { reasons })`) → guarded `UPDATE refunds … WHERE id = ? AND status = 'pending'`
+  → `INSERT refund_payouts` (UNIQUE `refund_id`) → success audit, all in one transaction. A stale second submit hits the
+  rule (`ALREADY_REFUNDED`) or, in a race, the guarded update; the UNIQUE constraint is the last line of defence.
+
+| Code | Rule | Error code |
+| ---- | ---- | ---------- |
+| `ROLE_NOT_PERMITTED` | role lacks `refund.process` (Payments Operator only) | `forbidden` |
+| `ALREADY_REFUNDED` | refund status is `processed` | `invalid_transition` |
+| `REFUND_NOT_PENDING` | refund status is `rejected` | `invalid_transition` |
+| `DUPLICATE_REFUND` | other processed refunds on the same transaction + this one exceed the transaction amount | `rule_violation` |
+| `KYC_NOT_APPROVED` | `block_refunds_unverified_kyc` ON and `isKycRestricted` | `rule_violation` |
+| `REFUNDS_PAUSED` | `pause_refund_processing` ON | `rule_violation` |
+| `AMOUNT_OVER_LIMIT` | `block_high_value_refunds` ON and amount > $1,000 | `rule_violation` |
+
+Denied audit rows carry `details.reasons` (all failing codes). **Session 3 extension point:** append a
+`RISK_HOLD_ACTIVE` rule to `REFUND_RULES` that reads `risk_holds`; page, service and audit pick it up with no other change.
+
+## Feature flags
+
+`src/server/feature-flags/definitions.ts` is the registry (key, label, description, where it is enforced, the refund
+block code it produces, seed default); `seed.ts` inserts one `feature_flags` row per definition. `isFeatureEnabled(db, key)`
+reads the row on every call, so a toggle is effective on the next request (no cache). `toggleFeatureFlag(db, role,
+{ key, decision: enable|disable, note })` — `assertCan("feature_flag.toggle")` (Risk Admin only) → Zod (key must be in
+the registry) → `allowedFlagDecisions(enabled)` (no-op toggles are `invalid_transition`) → guarded UPDATE with
+`updated_by_role` → audit `feature_flag.enable|disable` with `{ from, to, note }`. The action revalidates `/feature-flags`
+and `/refunds`.
+
+## Adding another workflow (e.g. Transaction Risk Review)
+
+0. **Scaffold** — `npm run new:workflow -- <slug> --entity <type> --role <role>`; then rename the generated
+   `<slug>.decide` permission to a `<noun>.<verb>` name and replace every TODO (the stub tests are `it.todo`).
 1. **Policy** — add a permission to `PERMISSIONS` in `src/server/permissions.ts` (e.g. `"refund.process": ["payments_operator"]`).
 2. **Reads** — add queries to `src/server/lookups.ts` (refund/transaction lookups already exist). For a queue, add a
    `parse<X>Query` Zod schema with `.catch()` defaults and a `search<X>` function like `searchCustomers`.
 3. **Service** — create `src/server/<workflow>/service.ts` modelled on `src/server/kyc/service.ts`:
    Zod schema, transition map, exported rule helpers (used by both page and service), one exported function per
-   mutation that wraps `runAuditedOperation`. Reuse cross-workflow gates such as `isKycRestricted`.
+   mutation that wraps `runAuditedOperation`. Reuse cross-workflow gates such as `isKycRestricted` and
+   `isFeatureEnabled`. When several rules decide one action, use an ordered rule list + a `can<Action>()` that returns
+   structured reasons (see Refunds) and pass `{ reasons }` as `OperationError` details for the denied audit row.
 4. **Tests** — `tests/<workflow>.test.ts` using `createTestDb()`: success + persistence, forbidden role,
    invalid transition, rule violation, validation, audit rows.
 5. **Action** — `src/app/<workflow>/actions.ts`, a thin `"use server"` adapter like `src/app/kyc/actions.ts`.

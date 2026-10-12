@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { FEATURE_FLAGS } from "./feature-flags/definitions";
 import { SEED_CUSTOMERS, type SeedCustomer, type SeedDecision } from "./seed-data";
 
 // Fixed "now" for the dataset: every timestamp is derived from it, so resets are byte-identical.
@@ -16,9 +17,12 @@ export const SEED_IDS = {
   viktor: "cus_viktor_sokolov",
   lucas: "cus_lucas_moreau",
   liam: "cus_liam_o_connor",
+  ben: "cus_ben_carter",
+  david: "cus_david_cohen",
 } as const;
 
-export const KYC_RESTRICTION_FLAG = "kyc_restriction";
+const PROCESSED_NOTE = "Refund issued to original payment method.";
+const REJECTED_NOTE = "Rejected: request outside the refund policy window.";
 
 type CheckType = "identity" | "address" | "sanctions" | "pep";
 type CheckRow = [result: string, detail: string];
@@ -133,10 +137,21 @@ export function seedDatabase(db: Database.Database): void {
   const insertTxn = db.prepare(
     `INSERT INTO transactions (id, customer_id, amount_cents, currency, description, status, created_at) VALUES (?, ?, ?, 'USD', ?, ?, ?)`,
   );
-  const insertRefund = db.prepare(
-    `INSERT INTO refunds (id, customer_id, transaction_id, amount_cents, currency, status, reason, created_at, processed_at)
-     VALUES (?, ?, ?, ?, 'USD', ?, ?, ?, ?)`,
+  const insertRefundRow = db.prepare(
+    `INSERT INTO refunds (id, customer_id, transaction_id, amount_cents, currency, status, reason, created_at, processed_at,
+       processed_by_role, processing_note)
+     VALUES (?, ?, ?, ?, 'USD', ?, ?, ?, ?, ?, ?)`,
   );
+  const insertPayout = db.prepare(
+    `INSERT INTO refund_payouts (refund_id, customer_id, amount_cents, currency, created_by_role, created_at) VALUES (?, ?, ?, 'USD', ?, ?)`,
+  );
+  // Closed refunds record who decided; every processed refund has exactly one payout.
+  const insertRefund = (id: string, customerId: string, txnId: string, amount: number, status: string, reason: string, createdAt: string, processedAt: string | null) => {
+    const closed = status !== "pending";
+    insertRefundRow.run(id, customerId, txnId, amount, status, reason, createdAt, processedAt, closed ? "payments_operator" : null,
+      status === "processed" ? PROCESSED_NOTE : status === "rejected" ? REJECTED_NOTE : null);
+    if (status === "processed") insertPayout.run(id, customerId, amount, "payments_operator", processedAt);
+  };
   const rng = mulberry32(20260115);
   const pick = <T,>(list: T[]) => list[Math.floor(rng() * list.length)];
   const dollars = (min: number, max: number) => Math.max(100, Math.round((min + rng() * (max - min)) / 100) * 100);
@@ -215,25 +230,30 @@ export function seedDatabase(db: Database.Database): void {
           const refundStatus = r < 0.4 ? "pending" : r < 0.85 ? "processed" : "rejected";
           const createdDaysAgo = Math.max(txnDaysAgo - (1 + rng() * 4), 0.05);
           const processedAt = refundStatus === "pending" ? null : at(Math.max(createdDaysAgo - 1, 0.01));
-          insertRefund.run(`ref_${id.slice(4)}_${n}`, id, txnId, refundAmount, refundStatus, pick(REFUND_REASONS), at(createdDaysAgo), processedAt);
+          insertRefund(`ref_${id.slice(4)}_${n}`, id, txnId, refundAmount, refundStatus, pick(REFUND_REASONS), at(createdDaysAgo), processedAt);
         }
       }
     });
 
     // Preserved demo relationships (used by later Refunds / Risk Review sessions).
     insertTxn.run("txn_maya_750", SEED_IDS.maya, 75000, "Annual plan purchase", "completed", at(5));
-    insertRefund.run("ref_maya_750", SEED_IDS.maya, "txn_maya_750", 75000, "pending", "Customer cancelled within trial", at(4), null);
+    insertRefund("ref_maya_750", SEED_IDS.maya, "txn_maya_750", 75000, "pending", "Customer cancelled within trial", at(4), null);
     insertTxn.run("txn_jordan_420", SEED_IDS.jordan, 42000, "Hardware order", "completed", at(30));
-    insertRefund.run("ref_jordan_420", SEED_IDS.jordan, "txn_jordan_420", 42000, "processed", "Item returned", at(25), at(23));
+    insertRefund("ref_jordan_420", SEED_IDS.jordan, "txn_jordan_420", 42000, "processed", "Item returned", at(25), at(23));
     insertTxn.run("txn_alex_350", SEED_IDS.alex, 35000, "Subscription upgrade", "completed", at(12));
-    insertRefund.run("ref_alex_350", SEED_IDS.alex, "txn_alex_350", 35000, "pending", "Duplicate charge", at(10), null);
+    insertRefund("ref_alex_350", SEED_IDS.alex, "txn_alex_350", 35000, "pending", "Duplicate charge", at(10), null);
     insertTxn.run("txn_alex_4500", SEED_IDS.alex, 450000, "Wire transfer out", "completed", at(2));
+    // Duplicate refund request: the transaction was already fully refunded, then the customer re-submitted.
+    insertTxn.run("txn_ben_180", SEED_IDS.ben, 18000, "Concert tickets", "completed", at(20));
+    insertRefund("ref_ben_180", SEED_IDS.ben, "txn_ben_180", 18000, "processed", "Event cancelled by organiser", at(18), at(17));
+    insertRefund("ref_ben_180_dup", SEED_IDS.ben, "txn_ben_180", 18000, "pending", "Event cancelled by organiser (re-submitted by customer)", at(6), null);
 
-    db.prepare(`INSERT INTO feature_flags (key, enabled, description, updated_at) VALUES (?, 0, ?, ?)`).run(
-      KYC_RESTRICTION_FLAG,
-      "When ON, customers without approved KYC are restricted (e.g. refunds blocked).",
-      SEED_TIMESTAMP,
-    );
+    // High-value refund: blocked while block_high_value_refunds is ON (seeded ON).
+    insertTxn.run("txn_david_2400", SEED_IDS.david, 240000, "Office equipment order", "completed", at(9));
+    insertRefund("ref_david_2400", SEED_IDS.david, "txn_david_2400", 240000, "pending", "Order cancelled before shipment", at(5), null);
+
+    const insertFlag = db.prepare(`INSERT INTO feature_flags (key, enabled, description, updated_at, updated_by_role) VALUES (?, ?, ?, ?, NULL)`);
+    for (const f of FEATURE_FLAGS) insertFlag.run(f.key, f.seedEnabled ? 1 : 0, f.description, SEED_TIMESTAMP);
     // risk_holds and audit_events intentionally start empty.
   })();
 }

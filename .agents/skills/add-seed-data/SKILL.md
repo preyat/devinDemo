@@ -15,7 +15,7 @@ Files: `src/server/schema.ts` (DDL, `SCHEMA_VERSION`, `TABLES`), `src/server/see
 - **Preserve demo scenarios** (asserted in `tests/seed.test.ts`): Maya (pending, triggered review, checks passed,
   `txn_maya_750` + pending `ref_maya_750`), Samira (pending, periodic refresh, address missing), Jordan (approved,
   `ref_jordan_420` processed), Alex (approved, `ref_alex_350` pending + `txn_alex_4500`, no risk hold), Viktor
-  (sanctions match), Lucas (expired passport). `kyc_restriction` OFF; `risk_holds`/`audit_events` empty unless a session says otherwise.
+  (sanctions match), Lucas (expired passport). Ben (duplicate refund request), David ($2,400 high-value refund). Flags: `block_refunds_unverified_kyc` OFF, `pause_refund_processing` OFF, `block_high_value_refunds` ON; every processed refund has exactly one `refund_payouts` row; `risk_holds`/`audit_events` empty unless a session says otherwise.
 - **Realism invariants**: approved ⇒ all checks pass; never-approved onboarding applicants have no transactions/refunds;
   activity only after first approval; open cases with activity are re-reviews (`existing` in `seed-data.ts`, history
   `approve` → `open_review` by `system`); refunds reference the same customer's `completed` transaction and never exceed

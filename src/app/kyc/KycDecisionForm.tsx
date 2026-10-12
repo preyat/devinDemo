@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { Alert } from "react-bootstrap";
 import { ArrowRight, Check, MessageSquareMore, X } from "lucide-react";
 import { DecisionForm, type DecisionOption } from "@/components/DecisionForm";
@@ -26,12 +27,14 @@ interface Props {
 }
 
 export function KycDecisionForm({ customerId, allowed, approvalBlockedReason, canDecide, finalStatusLabel, nextHref }: Props) {
+  // Freeze the pre-decision "next": a decision can re-sort the queue (e.g. by updated date) and move this record.
+  const [nextAfterDecision] = useState(nextHref);
   return (
     <DecisionForm
       action={decideKycAction}
       successAction={
-        nextHref && (
-          <Link href={nextHref} className="btn btn-primary btn-sm" data-testid="next-case-after-decision">
+        nextAfterDecision && (
+          <Link href={nextAfterDecision} className="btn btn-primary btn-sm" data-testid="next-case-after-decision">
             Next case <ArrowRight size={16} />
           </Link>
         )

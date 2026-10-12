@@ -1,4 +1,5 @@
 import { Badge } from "react-bootstrap";
+import { statusLabel } from "@/lib/labels";
 
 const VARIANTS: Record<string, string> = {
   pending: "warning",
@@ -8,6 +9,10 @@ const VARIANTS: Record<string, string> = {
   completed: "success",
   success: "success",
   passed: "success",
+  eligible: "success",
+  on: "warning",
+  off: "secondary",
+  blocked: "danger",
   clear: "success",
   low: "success",
   medium: "warning",
@@ -28,17 +33,7 @@ const SUBTLE: Record<string, string> = {
   triggered: "warning",
 };
 
-const LABELS: Record<string, string> = {
-  periodic_refresh: "Periodic refresh",
-  open_review: "Review opened",
-  info_requested: "Awaiting info",
-  review_required: "Review required",
-  request_info: "Request info",
-};
-
-export function statusLabel(status: string): string {
-  return LABELS[status] ?? status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ");
-}
+export { statusLabel };
 
 export function StatusBadge({ status, label }: { status: string; label?: string }) {
   const subtle = SUBTLE[status];

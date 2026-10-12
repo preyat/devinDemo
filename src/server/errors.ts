@@ -5,6 +5,8 @@ export class OperationError extends Error {
   constructor(
     readonly code: OperationErrorCode,
     message: string,
+    /** Extra structured context for the denied audit event, e.g. { reasons: ["KYC_NOT_APPROVED"] }. */
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "OperationError";

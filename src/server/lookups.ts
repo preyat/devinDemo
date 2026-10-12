@@ -72,6 +72,24 @@ export interface Refund {
   reason: string;
   createdAt: string;
   processedAt: string | null;
+  processedByRole: string | null;
+  processingNote: string | null;
+}
+
+/** Refund queue row: refund + customer name and current KYC status. */
+export interface RefundRow extends Refund {
+  customerName: string;
+  customerKycStatus: KycStatus;
+}
+
+export interface RefundPayout {
+  id: number;
+  refundId: string;
+  customerId: string;
+  amountCents: number;
+  currency: string;
+  createdByRole: string;
+  createdAt: string;
 }
 
 export interface FeatureFlag {
@@ -79,6 +97,7 @@ export interface FeatureFlag {
   enabled: boolean;
   description: string;
   updatedAt: string;
+  updatedByRole: string | null;
 }
 
 const CUSTOMER_COLUMNS = `id, name, email, country, city, date_of_birth AS dateOfBirth, account_type AS accountType,
@@ -177,6 +196,10 @@ export function getCustomerQueueNeighbours(db: Db, query: CustomerQuery, id: str
   const ids = (
     db.prepare(`SELECT id FROM customers ${whereSql} ORDER BY ${CUSTOMER_SORTS[query.sort]}, id`).all(params) as { id: string }[]
   ).map((r) => r.id);
+  return neighboursIn(ids, id);
+}
+
+function neighboursIn(ids: string[], id: string): QueueNeighbours {
   const idx = ids.indexOf(id);
   if (idx === -1) return { position: null, total: ids.length, prevId: null, nextId: ids[0] ?? null };
   return { position: idx + 1, total: ids.length, prevId: ids[idx - 1] ?? null, nextId: ids[idx + 1] ?? null };
@@ -226,19 +249,138 @@ export function getTransaction(db: Db, id: string): Transaction | null {
   return (db.prepare(`SELECT ${TXN_COLUMNS} FROM transactions WHERE id = ?`).get(id) as Transaction) ?? null;
 }
 
+const REFUND_COLUMNS = `r.id, r.customer_id AS customerId, r.transaction_id AS transactionId, r.amount_cents AS amountCents,
+  r.currency, r.status, r.reason, r.created_at AS createdAt, r.processed_at AS processedAt,
+  r.processed_by_role AS processedByRole, r.processing_note AS processingNote`;
+
 export function listRefundsForCustomer(db: Db, customerId: string): Refund[] {
   return db
-    .prepare(
-      `SELECT id, customer_id AS customerId, transaction_id AS transactionId, amount_cents AS amountCents, currency,
-              status, reason, created_at AS createdAt, processed_at AS processedAt
-       FROM refunds WHERE customer_id = ? ORDER BY created_at DESC, id`,
-    )
+    .prepare(`SELECT ${REFUND_COLUMNS} FROM refunds r WHERE r.customer_id = ? ORDER BY r.created_at DESC, r.id`)
     .all(customerId) as Refund[];
 }
 
+export function listRefundsForTransaction(db: Db, transactionId: string): Refund[] {
+  return db
+    .prepare(`SELECT ${REFUND_COLUMNS} FROM refunds r WHERE r.transaction_id = ? ORDER BY r.created_at, r.id`)
+    .all(transactionId) as Refund[];
+}
+
+export function getRefund(db: Db, id: string): RefundRow | null {
+  return (
+    (db
+      .prepare(
+        `SELECT ${REFUND_COLUMNS}, c.name AS customerName, c.kyc_status AS customerKycStatus
+         FROM refunds r JOIN customers c ON c.id = r.customer_id WHERE r.id = ?`,
+      )
+      .get(id) as RefundRow) ?? null
+  );
+}
+
+export function listPayoutsForRefund(db: Db, refundId: string): RefundPayout[] {
+  return db
+    .prepare(
+      `SELECT id, refund_id AS refundId, customer_id AS customerId, amount_cents AS amountCents, currency,
+              created_by_role AS createdByRole, created_at AS createdAt
+       FROM refund_payouts WHERE refund_id = ? ORDER BY id`,
+    )
+    .all(refundId) as RefundPayout[];
+}
+
+// ---- Refund queue search (validated from untrusted URL params) ----
+
+export const REFUND_STATUSES = ["pending", "processed", "rejected"] as const;
+export const REFUND_SORTS = {
+  requested_desc: "r.created_at DESC",
+  requested_asc: "r.created_at ASC",
+  amount_desc: "r.amount_cents DESC",
+} as const;
+
+export const refundQuerySchema = z.object({
+  q: z.string().trim().max(100).catch(""),
+  status: z.enum([...REFUND_STATUSES, "all"]).catch("pending"),
+  kyc: z.enum(["all", "approved", "not_approved"]).catch("all"),
+  sort: z.enum(Object.keys(REFUND_SORTS) as [keyof typeof REFUND_SORTS]).catch("requested_desc"),
+  page: customerQuerySchema.shape.page,
+  pageSize: customerQuerySchema.shape.pageSize,
+});
+export type RefundQuery = z.infer<typeof refundQuerySchema>;
+
+export function parseRefundQuery(raw: Record<string, string | string[] | undefined>): RefundQuery {
+  const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  return refundQuerySchema.parse({
+    q: first(raw.q) ?? "",
+    status: first(raw.status),
+    kyc: first(raw.kyc),
+    sort: first(raw.sort),
+    page: first(raw.page),
+    pageSize: first(raw.pageSize),
+  });
+}
+
+function refundFrom(query: RefundQuery): { from: string; params: Record<string, string | number> } {
+  const where: string[] = [];
+  const params: Record<string, string | number> = {};
+  if (query.q) {
+    where.push("(c.name LIKE @like OR r.id LIKE @like OR r.customer_id LIKE @like OR r.transaction_id LIKE @like)");
+    params.like = `%${query.q}%`;
+  }
+  if (query.status !== "all") {
+    where.push("r.status = @status");
+    params.status = query.status;
+  }
+  if (query.kyc === "approved") where.push("c.kyc_status = 'approved'");
+  else if (query.kyc === "not_approved") where.push("c.kyc_status != 'approved'");
+  return { from: `FROM refunds r JOIN customers c ON c.id = r.customer_id ${where.length ? `WHERE ${where.join(" AND ")}` : ""}`, params };
+}
+
+/** Prev/next for a refund page, using the same filters and sort as the refund queue. */
+export function getRefundQueueNeighbours(db: Db, query: RefundQuery, id: string): QueueNeighbours {
+  const { from, params } = refundFrom(query);
+  const ids = (db.prepare(`SELECT r.id AS id ${from} ORDER BY ${REFUND_SORTS[query.sort]}, r.id`).all(params) as { id: string }[]).map((r) => r.id);
+  return neighboursIn(ids, id);
+}
+
+export function searchRefunds(db: Db, query: RefundQuery): { rows: RefundRow[]; total: number; page: number } {
+  const { from, params } = refundFrom(query);
+  const { total } = db.prepare(`SELECT COUNT(*) AS total ${from}`).get(params) as { total: number };
+  const page = Math.min(query.page, Math.max(1, Math.ceil(total / query.pageSize)));
+  const rows = db
+    .prepare(
+      `SELECT ${REFUND_COLUMNS}, c.name AS customerName, c.kyc_status AS customerKycStatus ${from}
+       ORDER BY ${REFUND_SORTS[query.sort]}, r.id LIMIT @limit OFFSET @offset`,
+    )
+    .all({ ...params, limit: query.pageSize, offset: (page - 1) * query.pageSize }) as RefundRow[];
+  return { rows, total, page };
+}
+
+export function getRefundSummary(db: Db): { pending: number; pendingCents: number; processed: number; rejected: number } {
+  return db
+    .prepare(
+      `SELECT COALESCE(SUM(status = 'pending'), 0) AS pending,
+              COALESCE(SUM(CASE WHEN status = 'pending' THEN amount_cents END), 0) AS pendingCents,
+              COALESCE(SUM(status = 'processed'), 0) AS processed,
+              COALESCE(SUM(status = 'rejected'), 0) AS rejected
+       FROM refunds`,
+    )
+    .get() as { pending: number; pendingCents: number; processed: number; rejected: number };
+}
+
+/** Ids of all pending refunds (for eligibility counts on the Refunds page). */
+export function listPendingRefundIds(db: Db): string[] {
+  return (db.prepare(`SELECT id FROM refunds WHERE status = 'pending' ORDER BY id`).all() as { id: string }[]).map((r) => r.id);
+}
+
+// ---- Feature flags ----
+
+type FlagRow = Omit<FeatureFlag, "enabled"> & { enabled: number };
+const FLAG_COLUMNS = `key, enabled, description, updated_at AS updatedAt, updated_by_role AS updatedByRole`;
+const toFlag = (row: FlagRow): FeatureFlag => ({ ...row, enabled: row.enabled === 1 });
+
 export function getFeatureFlag(db: Db, key: string): FeatureFlag | null {
-  const row = db
-    .prepare(`SELECT key, enabled, description, updated_at AS updatedAt FROM feature_flags WHERE key = ?`)
-    .get(key) as (Omit<FeatureFlag, "enabled"> & { enabled: number }) | undefined;
-  return row ? { ...row, enabled: row.enabled === 1 } : null;
+  const row = db.prepare(`SELECT ${FLAG_COLUMNS} FROM feature_flags WHERE key = ?`).get(key) as FlagRow | undefined;
+  return row ? toFlag(row) : null;
+}
+
+export function listFeatureFlags(db: Db): FeatureFlag[] {
+  return (db.prepare(`SELECT ${FLAG_COLUMNS} FROM feature_flags ORDER BY key`).all() as FlagRow[]).map(toFlag);
 }
