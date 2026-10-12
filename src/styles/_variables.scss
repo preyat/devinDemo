@@ -1,0 +1,42 @@
+// Bootstrap variable overrides, adapted from the Dashio template (MIT, https://github.com/DashboardPack/dashio-template).
+// Must be imported before Bootstrap.
+
+// Colors
+$primary:   #4f46e5; // Indigo
+$secondary: #64748b; // Slate
+$success:   #10b981; // Emerald
+$info:      #0ea5e9; // Sky
+$warning:   #f59e0b; // Amber
+$danger:    #ef4444; // Red
+$light:     #f8fafc;
+$dark:      #0f172a;
+
+// Dark mode via data-bs-theme
+$enable-dark-mode: true;
+$color-mode-type:  data;
+
+// Typography
+$font-family-sans-serif: "Inter Variable", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+$font-size-base: 0.9375rem; // 15px
+$headings-font-weight: 650;
+$headings-line-height: 1.3;
+
+// Components
+$border-radius:     0.75rem;
+$border-radius-sm:  0.5rem;
+$border-radius-lg:  1rem;
+$border-radius-xl:  1.5rem;
+$border-radius-xxl: 2rem;
+
+$box-shadow-sm: 0 1px 2px rgb(15 23 42 / 0.06);
+$box-shadow:    0 1px 3px rgb(15 23 42 / 0.05), 0 6px 16px -4px rgb(15 23 42 / 0.08);
+$box-shadow-lg: 0 4px 12px -2px rgb(15 23 42 / 0.08), 0 16px 32px -8px rgb(15 23 42 / 0.12);
+
+// Cards
+$card-border-width:  1px;
+$card-border-radius: 1rem;
+$card-box-shadow:    $box-shadow-sm;
+$card-cap-bg:        transparent;
+
+// Sidebar (custom)
+$sidebar-width: 260px;
