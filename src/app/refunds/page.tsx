@@ -20,7 +20,9 @@ import {
   searchRefunds,
 } from "@/server/lookups";
 import type { Role } from "@/server/roles";
+import { can } from "@/server/permissions";
 import { businessBlockers, canProcessRefund } from "@/server/refunds/service";
+import { BulkProcessForm } from "./BulkProcessForm";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +44,15 @@ const FILTERS: FilterSelect[] = [
       { value: "all", label: "Any KYC status" },
       { value: "approved", label: "KYC approved" },
       { value: "not_approved", label: "KYC not approved" },
+    ],
+  },
+  {
+    name: "assigned",
+    label: "Assignment",
+    options: [
+      { value: "all", label: "Any assignment" },
+      { value: "unassigned", label: "Unassigned" },
+      { value: "claimed", label: "Claimed" },
     ],
   },
   {
@@ -67,6 +78,9 @@ export default async function RefundsPage({ searchParams }: { searchParams: Prom
   const summary = getRefundSummary(db);
   const blockedPending = listPendingRefundIds(db).filter((id) => businessBlockers(canProcessRefund(db, role, id)).length > 0).length;
   const activeFlags = listFeatureFlags(db).filter((f) => f.enabled);
+  const bulkEligible = rows
+    .filter((r) => r.status === "pending" && businessBlockers(canProcessRefund(db, role, r.id)).length === 0)
+    .map((r) => ({ id: r.id, label: `${r.customerName} · ${formatMoney(r.amountCents, r.currency)} · ${r.id}` }));
 
   return (
     <>
@@ -101,10 +115,19 @@ export default async function RefundsPage({ searchParams }: { searchParams: Prom
               { header: "Status", render: (r) => <StatusBadge status={r.status} /> },
               { header: "KYC", render: (r) => <StatusBadge status={r.customerKycStatus} /> },
               { header: "Eligibility", render: (r) => <EligibilityBadge refundId={r.id} status={r.status} role={role} /> },
+              { header: "Assignee", render: (r) => r.assignedTo ?? <span className="text-muted small">—</span>, className: "text-nowrap" },
               { header: "Requested", render: (r) => r.createdAt.slice(0, 10), className: "text-nowrap" },
             ]}
           />
           <QueuePagination page={page} pageSize={query.pageSize} total={total} />
+        </CardBody>
+      </Card>
+      <Card className="mt-3">
+        <CardHeader as="h2" className="h6 mb-0">
+          Bulk process <span className="small text-muted fw-normal">(eligible pending refunds on this page)</span>
+        </CardHeader>
+        <CardBody>
+          <BulkProcessForm refunds={bulkEligible} canProcess={can(role, "refund.process")} />
         </CardBody>
       </Card>
     </>

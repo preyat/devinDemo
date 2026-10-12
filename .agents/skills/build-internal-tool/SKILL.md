@@ -59,3 +59,7 @@ Copy their shape; do not invent new layers or a generic workflow engine.
   rules/tests, not UI, because shared components covered every screen.
 - The only smoke failure was a remounting form `key` that hid the success alert — check feedback after every mutation.
 - Moving `statusLabel` to `src/lib/labels.ts` let services format messages without importing a component.
+- Adding more actions to an existing queue (Refunds reject/partial/claim/bulk): tag shared rules with the `actions` they
+  gate instead of writing a second rule list; check the action's permission before Zod; batch operations loop over the
+  single-item service (nested savepoints) so each item keeps its own audit row; extend `DecisionForm` via `extraFields`
+  rather than writing a new form component.

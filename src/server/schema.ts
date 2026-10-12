@@ -1,7 +1,7 @@
 // Single source of truth for the SQLite schema. Money is stored as integer cents.
 // Bump SCHEMA_VERSION whenever this changes: getDb() rebuilds + reseeds stale local DBs.
 // risk_holds exists (empty) so Transaction Risk Review (Session 3) can build on stable data.
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 // Drop order respects foreign keys.
 export const TABLES = [
@@ -81,7 +81,12 @@ CREATE TABLE IF NOT EXISTS refunds (
   created_at TEXT NOT NULL,
   processed_at TEXT,
   processed_by_role TEXT,
-  processing_note TEXT
+  processing_note TEXT,
+  -- Amount actually paid out (<= amount_cents; less = partial refund). Set when processed.
+  approved_amount_cents INTEGER CHECK (approved_amount_cents IS NULL OR (approved_amount_cents > 0 AND approved_amount_cents <= amount_cents)),
+  -- Claim/assign: which operator is working the refund (coordination only; demo roles have no user identity).
+  assigned_to TEXT,
+  assigned_at TEXT
 );
 
 -- Simulated money movement for a processed refund. UNIQUE(refund_id) is the DB-level

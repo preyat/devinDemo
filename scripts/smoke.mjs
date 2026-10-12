@@ -16,20 +16,25 @@ async function setRole(page, role) {
   await page.waitForLoadState("networkidle");
 }
 
-async function decide(page, decision, note) {
-  const feedback = page.locator(FEEDBACK);
-  const before = (await feedback.count()) ? await feedback.textContent() : null;
-  await page.fill("#decision-note", note);
-  await page.click(`button[name=decision][value=${decision}]`);
+// Submits the DecisionForm that owns the given decision button (several forms can share a page). The form is
+// pinned as an element handle because its buttons change after success (e.g. "enable" becomes "disable").
+async function decide(page, decision, note, fill = {}) {
+  const form = await page.locator(`form:has(button[name=decision][value=${decision}])`).elementHandle();
+  const read = async () => {
+    const el = await form.$(FEEDBACK);
+    return el ? (await el.textContent()).trim() : null;
+  };
+  const before = await read();
+  await (await form.$("textarea[name=note]")).fill(note);
+  for (const [name, value] of Object.entries(fill)) await (await form.$(`[name=${name}]`)).fill(value);
+  await (await form.$(`button[name=decision][value=${decision}]`)).click();
   // Wait for a NEW result (the previous feedback alert stays rendered until replaced).
-  await page.waitForFunction(
-    ([sel, prev]) => {
-      const el = document.querySelector(sel);
-      return el && el.textContent && el.textContent !== prev;
-    },
-    [FEEDBACK, before],
-  );
-  return (await feedback.textContent()).trim();
+  for (let i = 0; i < 150; i++) {
+    const now = await read();
+    if (now && now !== before) return now;
+    await page.waitForTimeout(200);
+  }
+  throw new Error(`No new feedback after "${decision}"`);
 }
 
 const checks = [
@@ -154,6 +159,25 @@ const checks = [
       await page.goto(`${BASE}/refunds/ref_alex_350`);
       assert.match(await page.textContent("[data-testid=role-notice]"), /refund\.process/);
       assert.match(await decide(page, "process", "attempt"), /forbidden.*ROLE_NOT_PERMITTED/);
+      await setRole(page, "kyc_reviewer");
+    },
+  },
+  {
+    name: "Refunds queue actions: partial refund, claim + reject, bulk process",
+    async run(page) {
+      await setRole(page, "payments_operator");
+      await page.goto(`${BASE}/refunds/ref_alex_350`);
+      assert.match(await decide(page, "process", "Goodwill partial", { amount: "120.50" }), /partial refund of \$120\.50 \(of \$350\.00 requested\)/);
+      await page.goto(`${BASE}/refunds/ref_ben_180_dup`);
+      assert.match(await decide(page, "claim", "Looking into it", { assignee: "Sam R." }), /claimed by Sam R\./);
+      await page.goto(`${BASE}/refunds?assigned=claimed`);
+      assert.equal(await page.locator("[data-testid=row-ref_ben_180_dup]").count(), 1);
+      await page.goto(`${BASE}/refunds/ref_ben_180_dup`);
+      assert.match(await decide(page, "reject", "Duplicate of ref_ben_180"), /rejected for Ben Carter\. No money moved/);
+      await page.goto(`${BASE}/refunds`);
+      const selected = await page.locator("[data-testid=bulk-list] input:checked").count();
+      assert.ok(selected > 0, "bulk list has eligible refunds");
+      assert.match(await decide(page, "bulk", "Daily run"), new RegExp(`Bulk process: ${selected} of ${selected} refunds processed`));
       await setRole(page, "kyc_reviewer");
     },
   },

@@ -15,6 +15,7 @@ import { getDb } from "@/server/db";
 import { getRefundQueueNeighbours, getTransaction, listPayoutsForRefund, listRefundsForTransaction, parseRefundQuery } from "@/server/lookups";
 import { can } from "@/server/permissions";
 import { businessBlockers, canProcessRefund } from "@/server/refunds/service";
+import { ClaimRefundForm } from "../ClaimRefundForm";
 import { ProcessRefundForm } from "../ProcessRefundForm";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +50,11 @@ export default async function RefundCasePage({
         <RecordFields
           fields={[
           { label: "Refund ID", value: <code>{r.id}</code> },
-          { label: "Amount", value: formatMoney(r.amountCents, r.currency) },
+          { label: "Amount requested", value: formatMoney(r.amountCents, r.currency) },
+            ...(r.approvedAmountCents !== null
+              ? [{ label: "Amount paid", value: `${formatMoney(r.approvedAmountCents, r.currency)}${r.approvedAmountCents < r.amountCents ? " (partial)" : ""}` }]
+              : []),
+            { label: "Assignee", value: r.assignedTo ? `${r.assignedTo} (since ${formatDateTime(r.assignedAt)})` : "Unassigned" },
           { label: "Reason", value: r.reason },
           { label: "Requested", value: formatDateTime(r.createdAt) },
           { label: "Customer", value: <Link href={`/kyc/${r.customerId}`}>{r.customerId}</Link> },
@@ -77,15 +82,22 @@ export default async function RefundCasePage({
             }))}
           />
         </div>
-        <h3 className="h6 text-uppercase text-muted small fw-semibold mt-4 mb-2">Process</h3>
+        <h3 className="h6 text-uppercase text-muted small fw-semibold mt-4 mb-2">Process or reject</h3>
         <ProcessRefundForm
           key={r.id}
           refundId={r.id}
+          requestedDollars={(r.amountCents / 100).toFixed(2)}
           open={r.status === "pending"}
           canProcess={can(role, "refund.process")}
           blocked={blockers.length > 0}
           nextHref={nextHref}
         />
+        {r.status === "pending" && (
+          <>
+            <h3 className="h6 text-uppercase text-muted small fw-semibold mt-4 mb-2">Claim</h3>
+            <ClaimRefundForm key={`claim-${r.id}`} refundId={r.id} assignedTo={r.assignedTo} />
+          </>
+        )}
       </Col>
     </Row>
   );

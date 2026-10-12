@@ -6,11 +6,15 @@ It ships three working workflows. Every decision and every blocked attempt is wr
 - **KYC Review** (`/kyc`) — searchable, filterable queue of ~50 synthetic customers with summary cards and a case panel
   (profile, risk, identity/address/sanctions/PEP checks, transactions, refunds, decision history). KYC Reviewers can
   Approve (only when all mandatory checks pass), Reject or Request More Information — each requires a note.
-- **Refunds** (`/refunds`) — pending/processed/rejected refund queue (search, status/KYC filters, sort), detail panel
+- **Refunds** (`/refunds`) — pending/processed/rejected refund queue (search, status/KYC/assignment filters, sort), detail panel
   with an eligibility checklist, payout and audit trail. Payments Operators can **Process** a pending refund (note
   required). Eligibility is decided by one server function, `canProcessRefund()`, which returns structured reason
   codes (`ROLE_NOT_PERMITTED`, `ALREADY_REFUNDED`, `REFUND_NOT_PENDING`, `DUPLICATE_REFUND`, `KYC_NOT_APPROVED`,
-  `REFUNDS_PAUSED`, `AMOUNT_OVER_LIMIT`). Processing marks the refund processed and creates exactly one payout row in
+  `REFUNDS_PAUSED`, `AMOUNT_OVER_LIMIT`). Other queue actions (Payments Operator, all audited): **Reject** (note
+  required, no money moves, never blocked by flags), **Partial refund** (enter a lower amount; the payout records the
+  approved amount, and the $1,000 limit still applies to the requested amount), **Claim / release** (records who is
+  working a refund; coordination only — demo roles have no user identity), **Bulk process** (selected eligible refunds
+  on the page; each runs through `processRefund` and its own audit, blocked ones are reported). Processing marks the refund processed and creates exactly one payout row in
   the same transaction as the audit event.
 - **Feature Flags** (`/feature-flags`) — persisted operational flags; only Risk Admins can turn them ON/OFF (reason
   required). Changes apply to the very next refund eligibility check. Flags:

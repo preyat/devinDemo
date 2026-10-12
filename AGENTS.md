@@ -54,12 +54,12 @@ Dashio-derived theme (Inter font, sidebar layout, light/dark) · lucide-react ·
 | `src/app/page.tsx` | Home: workflow cards from `src/lib/workflows.ts`. |
 | `src/app/kyc/page.tsx` | KYC queue (server component): summary cards, URL-driven filters, full-width paginated queue; rows open `/kyc/<id>` carrying the queue params. Legacy `?customer=` redirects. |
 | `src/app/kyc/[customerId]/page.tsx` | KYC case page: `RecordNav` (back to filtered queue, prev/next), header (status, risk, review type, why open), `RecordTabs` Overview (profile, risk, checks, decision) / Activity (transactions, refunds) / History (decisions, audit). |
-| `src/app/refunds/[refundId]/page.tsx` | Refund page: same pattern as the KYC case page (`RecordNav`, header with eligibility codes, `RecordTabs` Overview (fields, `canProcessRefund` checks, process form) / Activity (payout, sibling refunds) / History (audit)). `/refunds?refund=` redirects here. |
+| `src/app/refunds/[refundId]/page.tsx` | Refund page (same pattern as the KYC case page): `RecordNav`, header with eligibility codes, `RecordTabs` Overview (fields incl. paid/partial + assignee, `canProcessRefund` checks, Process/Reject form with partial amount, Claim form) / Activity (payout, sibling refunds) / History (audit). `/refunds?refund=` redirects here. |
 | `src/app/kyc/actions.ts` | `"use server"` adapter: `decideKycAction` → `decideKyc`, then `revalidatePath("/kyc", "layout")` (covers case pages). |
 | `src/app/kyc/KycDecisionForm.tsx` | Client wrapper configuring `DecisionForm` with KYC buttons/icons and the blocked-approval notice. |
-| `src/app/refunds/page.tsx` | Refunds queue (server component): summary cards, active-flag banner, full-width refund queue with per-row eligibility badges; rows open `/refunds/<id>` with the queue params. |
-| `src/app/refunds/actions.ts` | `processRefundAction` → `processRefund`, `revalidatePath("/refunds", "layout")`. |
-| `src/app/refunds/ProcessRefundForm.tsx` | Client wrapper around `DecisionForm` (single "Process refund" button, role/blocked notices, read-only when closed). |
+| `src/app/refunds/page.tsx` | Refunds queue (server component): summary cards, active-flag banner, full-width refund queue (eligibility badges, assignee, assignment filter); rows open `/refunds/<id>` with the queue params; Bulk process card for eligible pending refunds on the page. |
+| `src/app/refunds/actions.ts` | `decideRefundAction` (process/reject), `claimRefundAction`, `bulkProcessRefundsAction`; each calls one service and `revalidatePath("/refunds", "layout")`. |
+| `src/app/refunds/ProcessRefundForm.tsx`, `ClaimRefundForm.tsx`, `BulkProcessForm.tsx` | Client wrappers around `DecisionForm` (`extraFields` for amount / assignee / checkbox list; distinct `noteId`s; Process form offers "Next refund" via `successAction`). |
 | `src/app/feature-flags/page.tsx` | Feature Flags (server component): flag table, detail (registry metadata, refunds currently blocked by the flag, toggle form, audit). |
 | `src/app/feature-flags/actions.ts` | `toggleFeatureFlagAction` → `toggleFeatureFlag`; revalidates `/feature-flags` and `/refunds`. |
 | `src/app/feature-flags/ToggleFlagForm.tsx` | Client wrapper around `DecisionForm` with Turn ON / Turn OFF (from `allowedFlagDecisions`). |
@@ -97,7 +97,7 @@ Dashio-derived theme (Inter font, sidebar layout, light/dark) · lucide-react ·
 | `src/server/audit.ts` | `writeAuditEvent`, `listAuditEvents`. |
 | `src/server/kyc/service.ts` | KYC rules: `decideKyc`, `KYC_TRANSITIONS`, `allowedKycDecisions`, `getApprovalBlockers`, `formatApprovalBlockers`. |
 | `src/server/kyc/eligibility.ts` | `isKycRestricted(db, customerId)` — KYC gate driven by flag `block_refunds_unverified_kyc`; used by Refunds. |
-| `src/server/refunds/service.ts` | `REFUND_RULES` (ordered, single source), `canProcessRefund` (structured reasons), `businessBlockers`, `formatRefundBlockers`, `processRefund`. |
+| `src/server/refunds/service.ts` | `REFUND_RULES` (ordered, single source), `evaluateRefundRules` / `canProcessRefund` / `canRejectRefund` (structured reasons, rules tagged by action), `processRefund` (full or partial), `rejectRefund`, `claimRefund`, `bulkProcessRefunds`. |
 | `src/server/feature-flags/definitions.ts` | Flag registry (`FEATURE_FLAGS`, key constants, `HIGH_VALUE_REFUND_LIMIT_CENTS`). |
 | `src/server/feature-flags/service.ts` | `isFeatureEnabled`, `allowedFlagDecisions`, `toggleFeatureFlag`. |
 | `scripts/db-reset.ts` | CLI for `npm run db:reset`. |
@@ -105,7 +105,7 @@ Dashio-derived theme (Inter font, sidebar layout, light/dark) · lucide-react ·
 | `scripts/new-workflow.ts` | Scaffold generator for `npm run new:workflow`. |
 | `tests/helpers.ts` | `createTestDb()` — fresh seeded `:memory:` DB. |
 | `tests/kyc.test.ts`, `tests/seed.test.ts`, `tests/eligibility.test.ts` | Service, seed consistency/determinism, KYC gate tests. |
-| `tests/refunds.test.ts`, `tests/feature-flags.test.ts` | Refund eligibility/processing (Maya, Jordan, Ben, David, roles, audit, rollback) and flag administration. |
+| `tests/refunds.test.ts`, `tests/refund-actions.test.ts`, `tests/feature-flags.test.ts` | Refund eligibility/processing (Maya, Jordan, Ben, David, roles, audit, rollback) and flag administration. |
 
 ## Data model
 
@@ -113,7 +113,7 @@ Dashio-derived theme (Inter font, sidebar layout, light/dark) · lucide-react ·
 review_type `onboarding | periodic_refresh | triggered` + review_reason + review_opened_at = why the current KYC case exists; applied_at = original application),
 `verification_checks` (one row per customer × `identity | address | sanctions | pep`; result `passed | missing | failed | clear | review_required` + `detail`),
 `kyc_decisions` (append-only history: decision, from/to status, note, role, time; `open_review` rows are written by role `system` when an existing customer is re-reviewed), `transactions`,
-`refunds` (status `pending | processed | rejected`; closed rows have `processed_at`, `processed_by_role`, `processing_note`),
+`refunds` (status `pending | processed | rejected`; closed rows have `processed_at`, `processed_by_role`, `processing_note`; `approved_amount_cents` = paid amount, `assigned_to`/`assigned_at` = claim),
 `refund_payouts` (simulated money movement; `UNIQUE(refund_id)` — one per processed refund),
 `feature_flags` (`key`, `enabled`, `description`, `updated_at`, `updated_by_role`; seeded from `definitions.ts`), `risk_holds` (empty), `audit_events`.
 
@@ -181,6 +181,11 @@ review_type `onboarding | periodic_refresh | triggered` + review_reason + review
 - Smoke checks share one DB per run (reset only before/after), so order them as one story (e.g. flag ON → Maya blocked →
   KYC approves Maya → refund processes). Use a second tab with the stale form to exercise double-submit.
 - Devin VM: the repo skill may not be in the Devin skill catalog; read `.agents/skills/<name>/SKILL.md` directly.
+- **Several `DecisionForm`s on one page** (Refunds: process/reject, claim, bulk): give each a distinct `noteId`, key
+  them by record id (never by state or by the list they show — a remount drops the success alert), and in smoke scope to
+  the owning form (`decide()` pins the form element because its buttons change after success).
+- **Check permission before Zod** in every mutating service, otherwise a forbidden role with a blank note is audited as
+  `VALIDATION` instead of `ROLE_NOT_PERMITTED` (caught by Devin Review on PR #2).
 
 ## Keeping docs current
 
