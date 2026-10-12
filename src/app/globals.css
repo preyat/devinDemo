@@ -1,0 +1,4 @@
+/* Keep custom CSS minimal; prefer Bootstrap utilities. */
+.contents {
+  display: contents;
+}
