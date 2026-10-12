@@ -54,6 +54,26 @@ npm run dev          # http://localhost:3000/kyc
 Pick a role in the navbar and follow one of the demo walkthroughs below. Run `npm run demo:reset` to restore
 the initial state at any time.
 
+### Walkthrough: Fraud Operations → Refunds (about 3 minutes)
+
+This shows a fraud escalation blocking a refund, enforced on the server. Start from a fresh `npm run demo:reset`,
+then switch roles with the navbar selector.
+
+1. **Payments Operator** → open `/refunds/ref_alex_350` (Alex Kim, $350, pending). The eligibility checklist passes
+   and there is no hold banner. Don't process it yet.
+2. **Risk Admin** → open `/fraud`, then click the HIGH alert `alert_alex_4500` (Alex Kim, $4,500 wire). The signals
+   are *New device* and *Unusual location*, and the hold status is "No active account risk hold".
+3. Enter a note (e.g. "Customer confirmed they did not send the wire.") and click **Escalate & Hold**. You should see
+   a success message naming hold `hold_alex_4500`. The hold status becomes *Active hold*, and the alert is now read-only.
+4. **Payments Operator** → open `/refunds`. Alex's row now shows `ACCOUNT_RISK_HOLD`. Open `/refunds/ref_alex_350`:
+   it shows the banner "Account under risk review — refund processing paused."
+5. Enter a note and click **Process refund**. The server rejects it with the same message. Reload the page: the refund
+   is still *Pending*, and the denied attempt is recorded in the audit trail.
+6. Optional contrast: as Risk Admin, **Dismiss alert** on `alert_sam_device`. No hold is created, so refunds are unaffected.
+7. Run `npm run demo:reset` to start over. `alert_priya_2750` shows the end state from step 4 already seeded.
+
+The same flow is automated in `npm run smoke` (the "Fraud Operations" checks).
+
 ## Demo data
 
 54 synthetic customers (50 KYC customers — 20 approved, 15 pending, 10 awaiting info, 5 rejected — plus 4 approved Fraud Operations customers),
@@ -88,9 +108,7 @@ Fraud Operations cases (all signals simulated; `src/server/fraud/seed-data.ts`):
 | `alert_sam_device`     | Sam Taylor  | LOW      | OPEN      | Low-confidence browser fingerprint change on a $62 renewal. |
 | `alert_priya_2750`     | Priya Shah  | HIGH     | ESCALATED | Escalated by Risk Admin (seeded through the real service): active hold `hold_priya_2750`, audit row, and her pending $120 refund is blocked `ACCOUNT_RISK_HOLD`. |
 
-Fraud demo (Alex): as Payments Operator `ref_alex_350` is eligible → as Risk Admin open `alert_alex_4500` and
-**Escalate & Hold** → as Payments Operator the refund shows `ACCOUNT_RISK_HOLD` / "Account under risk review — refund
-processing paused." and a processing attempt is rejected (refund stays pending, denial audited). Dismissing an alert never creates a hold.
+Fraud demo (Alex): see [Walkthrough: Fraud Operations → Refunds](#walkthrough-fraud-operations--refunds-about-3-minutes).
 
 Flags: `block_refunds_unverified_kyc` OFF, `pause_refund_processing` OFF, `block_high_value_refunds` ON. One risk hold (Priya). The audit log holds only Priya's seeded escalation.
 
