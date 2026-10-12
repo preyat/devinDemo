@@ -66,7 +66,7 @@ export default async function RefundCasePage({
       </Col>
       <Col lg={6}>
         <h3 className="h6 text-uppercase text-muted small fw-semibold mb-2">
-          Eligibility <span className="text-lowercase fw-normal">(canProcessRefund)</span>
+          Eligibility <span className="fw-normal" style={{ textTransform: "none" }}>(canProcessRefund)</span>
         </h3>
         <div data-testid="eligibility">
           <VerificationChecklist
