@@ -393,3 +393,182 @@ export function getFeatureFlag(db: Db, key: string): FeatureFlag | null {
 export function listFeatureFlags(db: Db): FeatureFlag[] {
   return (db.prepare(`SELECT ${FLAG_COLUMNS} FROM feature_flags ORDER BY key`).all() as FlagRow[]).map(toFlag);
 }
+
+// ---- Fraud Operations (alerts from the SIMULATED fraud monitoring system) ----
+
+export const FRAUD_SEVERITIES = ["high", "medium", "low"] as const;
+export type FraudSeverity = (typeof FRAUD_SEVERITIES)[number];
+export const FRAUD_ALERT_STATUSES = ["open", "escalated", "dismissed"] as const;
+export type FraudAlertStatus = (typeof FRAUD_ALERT_STATUSES)[number];
+
+export interface FraudAlert {
+  id: string;
+  customerId: string;
+  transactionId: string;
+  severity: FraudSeverity;
+  status: FraudAlertStatus;
+  scenario: string;
+  reason: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Queue row: alert + customer + linked transaction. */
+export interface FraudAlertRow extends FraudAlert {
+  customerName: string;
+  customerKycStatus: KycStatus;
+  amountCents: number;
+  currency: string;
+}
+
+export interface FraudSignal {
+  alertId: string;
+  code: string;
+  label: string;
+  detail: string;
+  source: "simulated";
+}
+
+export interface FraudAlertDecision {
+  id: number;
+  alertId: string;
+  decision: "open" | "dismiss" | "escalate";
+  fromStatus: FraudAlertStatus | null;
+  toStatus: FraudAlertStatus;
+  note: string;
+  decidedByRole: string;
+  decidedAt: string;
+}
+
+export interface RiskHold {
+  id: string;
+  alertId: string;
+  transactionId: string;
+  customerId: string;
+  status: "active" | "released";
+  reason: string;
+  createdByRole: string;
+  createdAt: string;
+  releasedAt: string | null;
+}
+
+const FRAUD_ALERT_COLUMNS = `a.id, a.customer_id AS customerId, a.transaction_id AS transactionId, a.severity, a.status, a.scenario,
+  a.reason, a.created_at AS createdAt, a.updated_at AS updatedAt, c.name AS customerName, c.kyc_status AS customerKycStatus,
+  t.amount_cents AS amountCents, t.currency`;
+const FRAUD_FROM = `FROM fraud_alerts a JOIN customers c ON c.id = a.customer_id JOIN transactions t ON t.id = a.transaction_id`;
+
+const SEVERITY_ORDER = `CASE a.severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END`;
+export const FRAUD_SORTS = {
+  priority: `CASE a.status WHEN 'open' THEN 0 WHEN 'escalated' THEN 1 ELSE 2 END, ${SEVERITY_ORDER}, a.created_at DESC`,
+  created_desc: "a.created_at DESC",
+  amount_desc: "t.amount_cents DESC",
+} as const;
+
+export const fraudAlertQuerySchema = z.object({
+  q: z.string().trim().max(100).catch(""),
+  severity: z.enum(["all", ...FRAUD_SEVERITIES]).catch("all"),
+  status: z.enum(["all", ...FRAUD_ALERT_STATUSES]).catch("all"),
+  sort: z.enum(Object.keys(FRAUD_SORTS) as [keyof typeof FRAUD_SORTS]).catch("priority"),
+  page: customerQuerySchema.shape.page,
+  pageSize: customerQuerySchema.shape.pageSize,
+});
+export type FraudAlertQuery = z.infer<typeof fraudAlertQuerySchema>;
+
+export function parseFraudAlertQuery(raw: Record<string, string | string[] | undefined>): FraudAlertQuery {
+  const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  return fraudAlertQuerySchema.parse({
+    q: first(raw.q) ?? "",
+    severity: first(raw.severity),
+    status: first(raw.status),
+    sort: first(raw.sort),
+    page: first(raw.page),
+    pageSize: first(raw.pageSize),
+  });
+}
+
+function fraudWhere(query: FraudAlertQuery): { whereSql: string; params: Record<string, string | number> } {
+  const where: string[] = [];
+  const params: Record<string, string | number> = {};
+  if (query.q) {
+    where.push("(c.name LIKE @like OR a.id LIKE @like OR a.customer_id LIKE @like OR a.transaction_id LIKE @like)");
+    params.like = `%${query.q}%`;
+  }
+  if (query.severity !== "all") {
+    where.push("a.severity = @severity");
+    params.severity = query.severity;
+  }
+  if (query.status !== "all") {
+    where.push("a.status = @status");
+    params.status = query.status;
+  }
+  return { whereSql: where.length ? `WHERE ${where.join(" AND ")}` : "", params };
+}
+
+export function searchFraudAlerts(db: Db, query: FraudAlertQuery): { rows: FraudAlertRow[]; total: number; page: number } {
+  const { whereSql, params } = fraudWhere(query);
+  const { total } = db.prepare(`SELECT COUNT(*) AS total ${FRAUD_FROM} ${whereSql}`).get(params) as { total: number };
+  const page = Math.min(query.page, Math.max(1, Math.ceil(total / query.pageSize)));
+  const rows = db
+    .prepare(`SELECT ${FRAUD_ALERT_COLUMNS} ${FRAUD_FROM} ${whereSql} ORDER BY ${FRAUD_SORTS[query.sort]}, a.id LIMIT @limit OFFSET @offset`)
+    .all({ ...params, limit: query.pageSize, offset: (page - 1) * query.pageSize }) as FraudAlertRow[];
+  return { rows, total, page };
+}
+
+/** Prev/next for an alert page, using the same filters and sort as the fraud queue. */
+export function getFraudAlertQueueNeighbours(db: Db, query: FraudAlertQuery, id: string): QueueNeighbours {
+  const { whereSql, params } = fraudWhere(query);
+  const ids = (db.prepare(`SELECT a.id AS id ${FRAUD_FROM} ${whereSql} ORDER BY ${FRAUD_SORTS[query.sort]}, a.id`).all(params) as { id: string }[]).map(
+    (r) => r.id,
+  );
+  return neighboursIn(ids, id);
+}
+
+export function getFraudAlert(db: Db, id: string): FraudAlertRow | null {
+  return (db.prepare(`SELECT ${FRAUD_ALERT_COLUMNS} ${FRAUD_FROM} WHERE a.id = ?`).get(id) as FraudAlertRow) ?? null;
+}
+
+export function listFraudAlertsForCustomer(db: Db, customerId: string): FraudAlertRow[] {
+  return db.prepare(`SELECT ${FRAUD_ALERT_COLUMNS} ${FRAUD_FROM} WHERE a.customer_id = ? ORDER BY a.created_at DESC, a.id`).all(customerId) as FraudAlertRow[];
+}
+
+export function getFraudSummary(db: Db): { open: number; highOpen: number; escalated: number; activeHolds: number } {
+  return db
+    .prepare(
+      `SELECT COALESCE(SUM(status = 'open'), 0) AS open,
+              COALESCE(SUM(status = 'open' AND severity = 'high'), 0) AS highOpen,
+              COALESCE(SUM(status = 'escalated'), 0) AS escalated,
+              (SELECT COUNT(*) FROM risk_holds WHERE status = 'active') AS activeHolds
+       FROM fraud_alerts`,
+    )
+    .get() as { open: number; highOpen: number; escalated: number; activeHolds: number };
+}
+
+export function listFraudSignals(db: Db, alertId: string): FraudSignal[] {
+  return db.prepare(`SELECT alert_id AS alertId, code, label, detail, source FROM fraud_signals WHERE alert_id = ? ORDER BY rowid`).all(alertId) as FraudSignal[];
+}
+
+export function listFraudAlertDecisions(db: Db, alertId: string): FraudAlertDecision[] {
+  return db
+    .prepare(
+      `SELECT id, alert_id AS alertId, decision, from_status AS fromStatus, to_status AS toStatus, note,
+              decided_by_role AS decidedByRole, decided_at AS decidedAt
+       FROM fraud_alert_decisions WHERE alert_id = ? ORDER BY decided_at DESC, id DESC`,
+    )
+    .all(alertId) as FraudAlertDecision[];
+}
+
+const HOLD_COLUMNS = `id, alert_id AS alertId, transaction_id AS transactionId, customer_id AS customerId, status, reason,
+  created_by_role AS createdByRole, created_at AS createdAt, released_at AS releasedAt`;
+
+export function listRiskHoldsForCustomer(db: Db, customerId: string): RiskHold[] {
+  return db.prepare(`SELECT ${HOLD_COLUMNS} FROM risk_holds WHERE customer_id = ? ORDER BY created_at DESC, id`).all(customerId) as RiskHold[];
+}
+
+/** Current persisted active hold for a customer (most recent), or null. */
+export function getActiveRiskHold(db: Db, customerId: string): RiskHold | null {
+  return (
+    (db
+      .prepare(`SELECT ${HOLD_COLUMNS} FROM risk_holds WHERE customer_id = ? AND status = 'active' ORDER BY created_at DESC, id LIMIT 1`)
+      .get(customerId) as RiskHold) ?? null
+  );
+}

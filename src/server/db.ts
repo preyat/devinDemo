@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { assertResettableDemoDb } from "./demo-guard";
 import { SCHEMA_SQL, SCHEMA_VERSION, TABLES } from "./schema";
 import { seedDatabase } from "./seed";
 
@@ -20,7 +21,7 @@ export function openDb(filename: string): Db {
   return db;
 }
 
-/** Drop every table, recreate the schema and re-seed. Used by `npm run db:reset`, tests and stale DBs. */
+/** Drop every table, recreate the schema and re-seed. Unguarded: callers on real files must call assertResettableDemoDb first. */
 export function resetDb(db: Db): void {
   db.pragma("foreign_keys = OFF");
   db.transaction(() => {
@@ -37,8 +38,17 @@ const globalForDb = globalThis as unknown as { portalDb?: Db };
 /** Shared app connection (survives Next.js dev HMR). Seeds a new or out-of-date DB automatically. */
 export function getDb(): Db {
   if (!globalForDb.portalDb) {
-    const db = openDb(defaultDbPath());
-    if (db.pragma("user_version", { simple: true }) !== SCHEMA_VERSION) resetDb(db);
+    const file = defaultDbPath();
+    const db = openDb(file);
+    try {
+      if (db.pragma("user_version", { simple: true }) !== SCHEMA_VERSION) {
+        assertResettableDemoDb(db, file);
+        resetDb(db);
+      }
+    } catch (err) {
+      db.close();
+      throw err;
+    }
     globalForDb.portalDb = db;
   }
   return globalForDb.portalDb;

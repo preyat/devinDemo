@@ -156,6 +156,7 @@ describe("canProcessRefund + processRefund", () => {
       "KYC_NOT_APPROVED",
       "REFUNDS_PAUSED",
       "AMOUNT_OVER_LIMIT",
+      "ACCOUNT_RISK_HOLD",
     ]);
   });
 });

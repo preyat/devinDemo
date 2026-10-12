@@ -260,4 +260,21 @@ export const SEED_CUSTOMERS: SeedCustomer[] = [
     name: "Sven Eriksen", country: "DK", city: "Copenhagen", accountType: "business", document: "Passport", status: "approved", risk: "medium",
     riskReason: "Holding company; beneficial owners verified.", scenario: "clean", appliedDaysAgo: 175,
   },
+  // ---- Fraud Operations customers (approved; hand-written activity in fraud/seed-data.ts) ----
+  {
+    id: "cus_jamie_patel", name: "Jamie Patel", country: "GB", city: "Manchester", accountType: "personal", document: "Passport", status: "approved", risk: "low",
+    riskReason: "Domestic salaried customer; low-value card spend.", scenario: "clean", appliedDaysAgo: 210, fixedTransactions: true,
+  },
+  {
+    id: "cus_maya_chen", name: "Maya Chen", country: "CA", city: "Toronto", accountType: "personal", document: "Passport", status: "approved", risk: "low",
+    riskReason: "Long-standing customer; everyday spend under $200.", scenario: "clean", appliedDaysAgo: 320, fixedTransactions: true,
+  },
+  {
+    id: "cus_sam_taylor", name: "Sam Taylor", country: "AU", city: "Sydney", accountType: "personal", document: "Driver licence", status: "approved", risk: "low",
+    riskReason: "Domestic customer; low expected volume.", scenario: "clean", appliedDaysAgo: 180, fixedTransactions: true,
+  },
+  {
+    id: "cus_priya_shah", name: "Priya Shah", country: "US", city: "Seattle", accountType: "personal", document: "Driver licence", status: "approved", risk: "medium",
+    riskReason: "Occasional international transfers.", scenario: "clean", appliedDaysAgo: 240, fixedTransactions: true,
+  },
 ];
