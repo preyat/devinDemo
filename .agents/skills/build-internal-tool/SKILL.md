@@ -34,7 +34,8 @@ Reference implementation: KYC Review. Copy its shape; do not invent new layers o
    `RecordDetail`, `VerificationChecklist`, `StatusBadge`, `DecisionForm` (+ `OperationFeedback` inside it).
    Thin `"use server"` action calling the service with `getDb()` + `getDemoRole()`, then `revalidatePath`.
    Build row links with `withParams` (`src/lib/url.ts`). In server components use `CardHeader`/`CardBody`
-   (not `Card.Header`); pass icons only from client components. Set `available: true` in `src/lib/workflows.ts`.
+   (not `Card.Header`); pass icons only from client components. Set `available: true` (and an `icon`) in
+   `src/lib/workflows.ts` so the sidebar links it. Style with Bootstrap utilities; theme tokens live in `src/styles/`.
 6. **Verify** — `npm run typecheck && npm run lint && npm test`; `npm run db:reset && npm run dev`, then in the
    browser exercise: allowed role success, rule-blocked action with explanation, forbidden role (switch the DEMO
    role selector), audit trail rows, queue filters. Reset the DB afterwards.

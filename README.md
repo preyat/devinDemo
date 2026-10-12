@@ -47,6 +47,11 @@ fully reproducible on every `npm run db:reset`. Demo scenarios:
 
 Feature flag `kyc_restriction` is OFF. No risk holds. Audit log is empty.
 
+## UI
+
+Bootstrap 5 + React Bootstrap with a theme and sidebar layout adapted from the MIT-licensed
+[Dashio template](https://github.com/DashboardPack/dashio-template) (Inter font, light/dark toggle in the header).
+
 ## More
 
 - [AGENTS.md](AGENTS.md) — file map, conventions, commands (for humans and agents).

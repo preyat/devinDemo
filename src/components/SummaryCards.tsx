@@ -12,10 +12,10 @@ export function SummaryCards({ items }: { items: SummaryItem[] }) {
     <Row xs={2} md={items.length} className="g-3 mb-3">
       {items.map((item) => (
         <Col key={item.label}>
-          <Card className="h-100">
-            <CardBody className="py-2">
+          <Card className="h-100 stat-card">
+            <CardBody>
               <div className="small text-muted">{item.label}</div>
-              <div className={`fs-4 fw-semibold ${item.variant ? `text-${item.variant}` : ""}`} data-testid={`summary-${item.label}`}>
+              <div className={`fs-3 fw-semibold mt-1 ${item.variant ? `text-${item.variant}` : ""}`} data-testid={`summary-${item.label}`}>
                 {item.value}
               </div>
             </CardBody>

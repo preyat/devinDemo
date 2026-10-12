@@ -11,7 +11,9 @@ export function DemoRoleSelector({ role }: { role: Role | null }) {
   const [pending, startTransition] = useTransition();
   return (
     <Form.Group className="d-flex align-items-center gap-2" controlId="demo-role">
-      <Form.Label className="mb-0 small text-warning fw-semibold text-nowrap">DEMO role (not auth)</Form.Label>
+      <Form.Label className="mb-0 small text-nowrap">
+        <span className="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">DEMO role · not auth</span>
+      </Form.Label>
       <Form.Select
         size="sm"
         value={role ?? ""}

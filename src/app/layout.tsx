@@ -1,8 +1,10 @@
-import "bootstrap/dist/css/bootstrap.min.css";
-import "./globals.css";
+import "@fontsource-variable/inter";
+import "@/styles/portal.scss";
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import type { ReactNode } from "react";
 import { PortalShell } from "@/components/PortalShell";
+import { parseTheme, THEME_COOKIE } from "@/lib/theme";
 import { getDemoRole } from "@/lib/session";
 
 export const metadata: Metadata = {
@@ -12,10 +14,13 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const role = await getDemoRole();
+  const theme = parseTheme((await cookies()).get(THEME_COOKIE)?.value);
   return (
-    <html lang="en">
-      <body className="bg-light">
-        <PortalShell role={role}>{children}</PortalShell>
+    <html lang="en" data-bs-theme={theme}>
+      <body>
+        <PortalShell role={role} theme={theme}>
+          {children}
+        </PortalShell>
       </body>
     </html>
   );

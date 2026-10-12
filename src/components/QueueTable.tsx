@@ -5,6 +5,8 @@ import { Table } from "react-bootstrap";
 export interface Column<T> {
   header: string;
   render: (row: T) => ReactNode;
+  /** Applied to the header and every cell, e.g. "text-nowrap". */
+  className?: string;
 }
 
 interface QueueTableProps<T> {
@@ -24,7 +26,7 @@ export function QueueTable<T>({ rows, columns, getRowKey, getRowHref, selectedKe
       <thead>
         <tr>
           {columns.map((c) => (
-            <th key={c.header}>{c.header}</th>
+            <th key={c.header} className={c.className}>{c.header}</th>
           ))}
         </tr>
       </thead>
@@ -35,7 +37,7 @@ export function QueueTable<T>({ rows, columns, getRowKey, getRowHref, selectedKe
           return (
             <tr key={key} className={key === selectedKey ? "table-active" : undefined} data-testid={`row-${key}`}>
               {columns.map((c, i) => (
-                <td key={c.header}>{i === 0 && href ? <Link href={href}>{c.render(row)}</Link> : c.render(row)}</td>
+                <td key={c.header} className={c.className}>{i === 0 && href ? <Link href={href}>{c.render(row)}</Link> : c.render(row)}</td>
               ))}
             </tr>
           );

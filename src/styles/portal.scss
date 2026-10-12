@@ -1,0 +1,166 @@
+// Portal theme: Bootstrap 5.3 + Dashio-derived tokens and sidebar layout
+// (Dashio template, MIT, https://github.com/DashboardPack/dashio-template).
+// Prefer Bootstrap utilities in components; keep custom rules here minimal.
+
+@import "variables";
+@import "bootstrap/scss/bootstrap";
+
+// ---- Theme tokens per color mode ----
+[data-bs-theme="light"] {
+  --bs-tertiary-bg: #ffffff;
+  --bs-border-color: #e6e8ec;
+  --bs-border-color-translucent: rgb(15 23 42 / 0.07);
+  --portal-canvas: #f4f5f7;
+  --portal-hover: rgb(15 23 42 / 0.05);
+}
+
+[data-bs-theme="dark"] {
+  --bs-body-bg: #131826;
+  --bs-body-bg-rgb: 19, 24, 38;
+  --bs-secondary-bg: #202636;
+  --bs-tertiary-bg: #1a2032;
+  --bs-border-color: #262d3f;
+  --bs-border-color-translucent: rgb(255 255 255 / 0.08);
+  --portal-canvas: #0a0e17;
+  --portal-hover: rgb(255 255 255 / 0.06);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv11", "ss01";
+  letter-spacing: -0.006em;
+}
+
+h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6 {
+  letter-spacing: -0.02em;
+}
+
+.table, .stat-card {
+  font-variant-numeric: tabular-nums;
+}
+
+// ---- Layout: sidebar + main ----
+.portal-wrapper {
+  display: flex;
+  min-height: 100vh;
+}
+
+.portal-main {
+  flex: 1;
+  min-width: 0;
+  background-color: var(--portal-canvas);
+}
+
+.portal-header {
+  background-color: rgb(var(--bs-body-bg-rgb) / 0.72) !important;
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+}
+
+.portal-sidebar {
+  width: $sidebar-width;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  background-color: var(--bs-tertiary-bg);
+}
+
+.sidebar-nav {
+  .nav-link {
+    border-radius: var(--bs-border-radius);
+    padding: 0.625rem 1rem;
+    color: var(--bs-body-color);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+
+    &:hover {
+      background-color: var(--portal-hover);
+    }
+
+    &.active {
+      background-color: var(--bs-primary);
+      color: #fff;
+      box-shadow: 0 4px 12px -2px rgb(var(--bs-primary-rgb) / 0.4);
+    }
+
+    &.disabled {
+      color: var(--bs-secondary-color);
+    }
+  }
+
+  .nav-header {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--bs-secondary-color);
+    padding: 1.25rem 1rem 0.5rem;
+  }
+}
+
+.stat-card {
+  transition: transform 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--bs-box-shadow);
+  }
+}
+
+.card {
+  box-shadow: var(--bs-box-shadow-sm);
+}
+
+.table > thead th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--bs-secondary-color);
+}
+
+.table a {
+  font-weight: 500;
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+// RecordDetail uses a wrapper div inside <dl class="row">.
+.contents {
+  display: contents;
+}
+
+// ---- Mobile: off-canvas sidebar ----
+@include media-breakpoint-down(lg) {
+  .portal-sidebar {
+    position: fixed;
+    z-index: $zindex-offcanvas;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease-in-out;
+
+    &.show {
+      transform: translateX(0);
+    }
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: $zindex-offcanvas-backdrop;
+    background-color: rgba(0, 0, 0, 0.5);
+  }
+}
+
+[data-bs-theme="dark"] .table-light {
+  --bs-table-bg: var(--bs-tertiary-bg);
+  --bs-table-color: var(--bs-body-color);
+  --bs-table-border-color: var(--bs-border-color);
+}

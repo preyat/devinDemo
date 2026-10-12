@@ -94,7 +94,7 @@ export default async function KycPage({ searchParams }: { searchParams: Promise<
         ]}
       />
       <Row className="g-3">
-        <Col lg={6}>
+        <Col xl={7}>
           <Card>
             <CardHeader as="h2" className="h6 mb-0">Customer queue</CardHeader>
             <CardBody>
@@ -106,19 +106,19 @@ export default async function KycPage({ searchParams }: { searchParams: Promise<
                 selectedKey={selected?.id}
                 emptyText="No customers match these filters."
                 columns={[
-                  { header: "Customer", render: (c) => c.name },
+                  { header: "Customer", render: (c) => c.name, className: "text-nowrap" },
                   { header: "Country", render: (c) => c.country },
                   { header: "KYC status", render: (c) => <StatusBadge status={c.kycStatus} /> },
                   { header: "Risk", render: (c) => <StatusBadge status={c.riskLevel} /> },
-                  { header: "Applied", render: (c) => c.appliedAt.slice(0, 10) },
-                  { header: "Updated", render: (c) => c.updatedAt.slice(0, 10) },
+                  { header: "Applied", render: (c) => c.appliedAt.slice(0, 10), className: "text-nowrap" },
+                  { header: "Updated", render: (c) => c.updatedAt.slice(0, 10), className: "text-nowrap" },
                 ]}
               />
               <QueuePagination page={page} pageSize={query.pageSize} total={total} />
             </CardBody>
           </Card>
         </Col>
-        <Col lg={6}>
+        <Col xl={5}>
           {!selected ? (
             <Card body className="text-muted">
               {selectedId ? `Customer ${selectedId} not found.` : "Select a customer to review."}
@@ -206,7 +206,7 @@ function CustomerCase({ customerId, canDecide }: { customerId: string; canDecide
             getRowKey={(d) => String(d.id)}
             emptyText="No decisions yet."
             columns={[
-              { header: "When", render: (d) => formatDateTime(d.decidedAt) },
+              { header: "When", render: (d) => formatDateTime(d.decidedAt), className: "text-nowrap" },
               { header: "Decision", render: (d) => <StatusBadge status={d.toStatus} label={statusLabel(d.decision)} /> },
               { header: "By", render: (d) => d.decidedByRole },
               { header: "Note", render: (d) => d.note },
@@ -223,7 +223,7 @@ function CustomerCase({ customerId, canDecide }: { customerId: string; canDecide
             getRowKey={(t) => t.id}
             emptyText="No transactions."
             columns={[
-              { header: "Date", render: (t) => t.createdAt.slice(0, 10) },
+              { header: "Date", render: (t) => t.createdAt.slice(0, 10), className: "text-nowrap" },
               { header: "Description", render: (t) => t.description },
               { header: "Amount", render: (t) => formatMoney(t.amountCents, t.currency) },
               { header: "Status", render: (t) => <StatusBadge status={t.status} /> },
@@ -240,7 +240,7 @@ function CustomerCase({ customerId, canDecide }: { customerId: string; canDecide
             getRowKey={(r) => r.id}
             emptyText="No refunds."
             columns={[
-              { header: "Date", render: (r) => r.createdAt.slice(0, 10) },
+              { header: "Date", render: (r) => r.createdAt.slice(0, 10), className: "text-nowrap" },
               { header: "Transaction", render: (r) => <code>{r.transactionId}</code> },
               { header: "Amount", render: (r) => formatMoney(r.amountCents, r.currency) },
               { header: "Status", render: (r) => <StatusBadge status={r.status} /> },
@@ -258,7 +258,7 @@ function CustomerCase({ customerId, canDecide }: { customerId: string; canDecide
             getRowKey={(e) => String(e.id)}
             emptyText="No audit events yet."
             columns={[
-              { header: "When", render: (e) => formatDateTime(e.occurredAt) },
+              { header: "When", render: (e) => formatDateTime(e.occurredAt), className: "text-nowrap" },
               { header: "Role", render: (e) => e.actorRole ?? "—" },
               { header: "Action", render: (e) => <code>{e.action}</code> },
               { header: "Outcome", render: (e) => <StatusBadge status={e.outcome} /> },

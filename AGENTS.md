@@ -17,20 +17,23 @@ Run `typecheck`, `lint` and `test` before every commit. Node 24 via nvm on the d
 
 ## Stack
 
-Next.js 15 App Router · React 19 · TypeScript · React Bootstrap 2 + Bootstrap 5 · lucide-react ·
-better-sqlite3 (synchronous, no ORM) · Zod 3 · Vitest 3.
+Next.js 15 App Router · React 19 · TypeScript · React Bootstrap 2 + Bootstrap 5 (compiled from SCSS with `sass`) ·
+Dashio-derived theme (Inter font, sidebar layout, light/dark) · lucide-react · better-sqlite3 (synchronous, no ORM) · Zod 3 · Vitest 3.
 
 ## File map
 
 | Path | Responsibility |
 | ---- | -------------- |
-| `src/app/layout.tsx` | Root layout; reads demo role, renders `PortalShell`. |
+| `src/app/layout.tsx` | Root layout; imports Inter + `portal.scss`, reads demo role + theme cookies, renders `PortalShell`. |
+| `src/styles/_variables.scss` | Bootstrap variable overrides (colours, Inter, radii, shadows, `$sidebar-width`), adapted from Dashio (MIT). |
+| `src/styles/portal.scss` | Imports Bootstrap SCSS + light/dark tokens + sidebar/header layout. The only global stylesheet. |
 | `src/app/page.tsx` | Home: workflow cards from `src/lib/workflows.ts`. |
 | `src/app/kyc/page.tsx` | KYC Review (server component): summary cards, filtered/paginated queue, case panel (profile, risk, verification, decision, history, transactions, refunds, audit). |
 | `src/app/kyc/actions.ts` | `"use server"` adapter: `decideKycAction` → `decideKyc`, then `revalidatePath`. |
 | `src/app/kyc/KycDecisionForm.tsx` | Client wrapper configuring `DecisionForm` with KYC buttons/icons and the blocked-approval notice. |
 | `src/app/actions/role.ts` | `setDemoRole` server action (writes `demo_role` cookie). |
-| `src/components/PortalShell.tsx` | Client navbar + nav links + `DemoRoleSelector`. |
+| `src/components/PortalShell.tsx` | Client app chrome: sidebar nav from `WORKFLOWS` (active state, "Soon" for unavailable, mobile off-canvas) + sticky header with `DemoRoleSelector` and `ThemeToggle`. |
+| `src/components/ThemeToggle.tsx` | Client light/dark toggle (`data-bs-theme` + `theme` cookie). |
 | `src/components/QueueTable.tsx` | Generic table: `columns`, `getRowKey`, optional `getRowHref`, `selectedKey`. |
 | `src/components/QueueFilters.tsx` | Client, URL-driven search box + select filters; any change resets `page`. |
 | `src/components/QueuePagination.tsx` | Client prev/next/page links preserving other URL params + "Showing x–y of n". |
@@ -41,7 +44,8 @@ better-sqlite3 (synchronous, no ORM) · Zod 3 · Vitest 3.
 | `src/components/StatusBadge.tsx` | Status → Bootstrap colour + label (`statusLabel`). |
 | `src/components/OperationFeedback.tsx` | Renders an `OperationResult` as success/danger alert. |
 | `src/components/PageHeader.tsx` | Page title + description. |
-| `src/lib/workflows.ts` | Nav registry; flip `available: true` when a workflow ships. |
+| `src/lib/workflows.ts` | Nav registry (`name`, `href`, `description`, `available`, lucide `icon`); flip `available: true` when a workflow ships. |
+| `src/lib/theme.ts` | `Theme`, `THEME_COOKIE`, `parseTheme` (shared by server layout and client toggle). |
 | `src/lib/session.ts` | `getDemoRole()` — reads cookie, defaults to `kyc_reviewer`, unknown → `null`. |
 | `src/lib/url.ts` | `withParams(path, currentParams, overrides)` for server-built links. |
 | `src/lib/format.ts` | `formatMoney(cents)`, `formatDateTime(iso)`. |
@@ -100,12 +104,19 @@ better-sqlite3 (synchronous, no ORM) · Zod 3 · Vitest 3.
     a fixed-seed PRNG. Seed invariants (e.g. approved ⇒ all checks pass) are enforced in `seed.ts` and `tests/seed.test.ts`.
 12. **Schema changes**: edit `schema.ts`, add the table to `TABLES`, bump `SCHEMA_VERSION`, update seed + tests.
 13. **Tests** use `createTestDb()`; never touch `data/portal.db`.
+14. **Styling**: theme via `src/styles/_variables.scss`; layout/token rules in `portal.scss`. In components use
+    Bootstrap/React Bootstrap + utility classes only (no new CSS files, no inline styles beyond sizing).
+    Use `stat-card` for metric cards and `className: "text-nowrap"` on short `QueueTable` columns (dates, names).
 
 ## Gotchas
 
 - React Bootstrap in **server components**: use named sub-components (`CardHeader`, `CardBody`, `ListGroupItem`)
   not dot access (`Card.Header`) — dot access on a client reference is `undefined` in RSC and 500s the page.
   Components that pass functions/elements as props (e.g. `as={Link}`, lucide icons) must be `"use client"`.
+- Never import constants from a `"use client"` module into a server component — the server gets a client reference,
+  not the value (this broke the theme cookie once). Put shared constants in `src/lib/*` without `"use client"`.
+- Bootstrap's `--bs-offcanvas-zindex` is only defined on `.offcanvas`; use the Sass `$zindex-offcanvas` instead.
+- Sass deprecation noise from Bootstrap is silenced in `next.config.ts` (`sassOptions`).
 - `getDb()` caches the connection on `globalThis`; `npm run db:reset` works while `npm run dev` is running,
   but restart `npm run dev` after a `SCHEMA_VERSION` bump.
 - Seed data is dated around `SEED_TIMESTAMP` (2026-01-15); live decisions use the real clock.
