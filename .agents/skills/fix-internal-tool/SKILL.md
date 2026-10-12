@@ -1,13 +1,14 @@
 ---
 name: fix-internal-tool
-description: Fix a bug or make a small maintenance change in an EXISTING Ops Portal workflow (KYC Review, Refunds, Feature Flags) — green baseline, reproduce with a failing test or smoke check first, fix in the right layer (src/server/<workflow>/service.ts), keep the audit/permission/single-source-rule invariants, verify and open a PR with evidence. Use for any change that is not a new workflow.
+description: Fix a bug or make a small maintenance change in an EXISTING Ops Portal workflow (KYC Review, Refunds, Feature Flags, Fraud Operations) — green baseline, reproduce with a failing test or smoke check first, fix in the right layer (src/server/<workflow>/service.ts), keep the audit/permission/single-source-rule invariants, verify and open a PR with evidence. Use for any change that is not a new workflow.
 ---
 
 # Fix an internal tool workflow
 
 Scope: change existing behaviour, not add a workflow (that is `build-internal-tool`). Keep the diff minimal; no new
 frameworks, layers or a generic engine. References: KYC (transition map + blockers), Refunds (`REFUND_RULES` +
-`canProcessRefund`), Feature Flags (`definitions.ts` registry + `isFeatureEnabled`).
+`canProcessRefund`), Feature Flags (`definitions.ts` registry + `isFeatureEnabled`),
+Fraud Operations (`FRAUD_ALERT_TRANSITIONS` + `decideFraudAlert`; escalation holds feed `ACCOUNT_RISK_HOLD` in `REFUND_RULES`).
 
 ## Procedure
 
@@ -23,7 +24,8 @@ frameworks, layers or a generic engine. References: KYC (transition map + blocke
 3. **Locate the right layer** (fix the root cause there, not the symptom elsewhere):
    - Business rules, transitions, eligibility, reason/error codes → `src/server/<workflow>/service.ts`
      (cross-workflow gates: `isKycRestricted` in `src/server/kyc/eligibility.ts`, `isFeatureEnabled` in
-     `src/server/feature-flags/service.ts`, flag registry in `src/server/feature-flags/definitions.ts`).
+     `src/server/feature-flags/service.ts`, flag registry in `src/server/feature-flags/definitions.ts`, risk holds in
+     `src/server/fraud/holds.ts`).
    - Queue reads, filters, sort, neighbours → `src/server/lookups.ts`. Roles/permissions → `src/server/permissions.ts`.
    - Seed/schema → `add-seed-data` (bump `SCHEMA_VERSION`, keep demo scenarios + `tests/seed.test.ts`).
    - Rendering only → `src/app/<workflow>/…` / `src/components/`. Never patch a rule in a component or page.
@@ -35,7 +37,8 @@ frameworks, layers or a generic engine. References: KYC (transition map + blocke
    - Existing tests are not weakened or deleted to make the fix pass; if one encoded the bug, change it and say why in the PR.
 5. **Verify** — the new test now passes; `npm run typecheck && npm run lint && npm test`; architecture greps from
    `.agents/skills/review-internal-tool/SKILL.md` (each prints nothing); `npm run dev` + `npm run smoke` for any change
-   reachable from the UI. `npm run db:reset` afterwards.
+   reachable from the UI (smoke checks share DB state in order — a fix in one workflow can shift later checks).
+   `npm run db:reset` afterwards (alias of the guarded `demo:reset`; it refuses non-demo DBs — never bypass the guard).
 6. **Docs** — `update-docs` (only what changed: rules table, README scenarios, AGENTS.md) + `capture-session-learnings`
    (add the root cause / gotcha to the relevant skill or AGENTS.md if it could recur).
 7. **PR** — branch `devin/<timestamp>-fix-<slug>`; never commit `data/*.db` or screenshots. PR body: bug + repro
