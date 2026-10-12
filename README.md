@@ -1,72 +1,67 @@
 # Ops Portal (prototype)
 
-A minimal internal operations portal for a fintech, built as a local prototype with **synthetic data only**.
-It ships three working workflows. Every decision and every blocked attempt is written to an audit log.
+A local internal-operations portal for a fintech: reviewers work queues of KYC cases, refunds and fraud alerts, and
+operators toggle feature flags. It runs on **synthetic data only**, and every decision and blocked attempt is
+written to an audit log.
 
-- **KYC Review** (`/kyc`) — searchable, filterable queue of ~50 synthetic customers with summary cards and a case panel
-  (profile, risk, identity/address/sanctions/PEP checks, transactions, refunds, decision history). KYC Reviewers can
-  Approve (only when all mandatory checks pass), Reject or Request More Information — each requires a note.
-- **Refunds** (`/refunds`) — pending/processed/rejected refund queue (search, status/KYC/assignment filters, sort), detail panel
-  with an eligibility checklist, payout and audit trail. Payments Operators can **Process** a pending refund (note
-  required). Eligibility is decided by one server function, `canProcessRefund()`, which returns structured reason
-  codes (`ROLE_NOT_PERMITTED`, `ALREADY_REFUNDED`, `REFUND_NOT_PENDING`, `DUPLICATE_REFUND`, `KYC_NOT_APPROVED`,
-  `REFUNDS_PAUSED`, `AMOUNT_OVER_LIMIT`). Other queue actions (Payments Operator, all audited): **Reject** (note
-  required, no money moves, never blocked by flags), **Partial refund** (enter a lower amount; the payout records the
-  approved amount, and the $1,000 limit still applies to the requested amount), **Claim / release** (records who is
-  working a refund; coordination only — demo roles have no user identity), **Bulk process** (selected eligible refunds
-  on the page; each runs through `processRefund` and its own audit, blocked ones are reported). Processing marks the refund processed and creates exactly one payout row in
-  the same transaction as the audit event.
-- **Feature Flags** (`/feature-flags`) — persisted operational flags; only Risk Admins can turn them ON/OFF (reason
-  required). Changes apply to the very next refund eligibility check. Flags:
-  `block_refunds_unverified_kyc` (OFF; blocks refunds for customers whose KYC is not approved),
-  `pause_refund_processing` (OFF; emergency stop), `block_high_value_refunds` (ON; blocks refunds over $1,000).
+> **Status:** prototype / demo. No real authentication, no external providers, no production data.
 
-> The role selector in the navbar is a **DEMO control, not authentication**. The chosen role is stored in a
-> cookie and treated as an untrusted claim; the server re-checks it against `src/server/permissions.ts` on
-> every mutation.
+## Background
 
-- **Fraud Operations** (`/fraud`) — investigation queue of alerts from a **simulated** fraud monitoring system
-  (no external provider), filterable by severity and status, plus a case page per alert (`/fraud/<alertId>`) with
-  the linked customer, transaction, triggered signals, KYC status, refund history, account hold status, investigation
-  decisions and audit trail. **Risk Admins** can **Dismiss** (`open → dismissed`, no hold) or **Escalate & Hold**
-  (`open → escalated` + active account risk hold). An active hold makes `canProcessRefund()` fail with
-  `ACCOUNT_RISK_HOLD` — "Account under risk review — refund processing paused." — everywhere refunds are processed.
+Four workflows share one architecture. Each has a queue page with a dedicated case page, business rules in
+framework-free server services, and every mutation is permission-checked and audited atomically
+(`runAuditedOperation`).
 
-Demo roles: KYC Reviewer, Payments Operator, Risk Admin.
+| Workflow | Route | Who acts | What they decide |
+| -------- | ----- | -------- | ---------------- |
+| KYC Review | `/kyc`, `/kyc/<customerId>` | KYC Reviewer | Approve (only when all mandatory checks pass), Reject or Request More Information; note required |
+| Refunds | `/refunds`, `/refunds/<refundId>` | Payments Operator | Process, Partial refund, Reject, Claim/release, Bulk process |
+| Feature Flags | `/feature-flags` | Risk Admin | Turn operational flags ON/OFF (reason required) |
+| Fraud Operations | `/fraud`, `/fraud/<alertId>` | Risk Admin | Dismiss, or Escalate & Hold (places an account risk hold) |
 
-## Run it
+- **Refund eligibility** comes from a single server function, `canProcessRefund()`, which returns structured reason codes:
+  `ROLE_NOT_PERMITTED`, `ALREADY_REFUNDED`, `REFUND_NOT_PENDING`, `DUPLICATE_REFUND`, `KYC_NOT_APPROVED`,
+  `REFUNDS_PAUSED`, `AMOUNT_OVER_LIMIT`, `ACCOUNT_RISK_HOLD`. Processing marks the refund processed and creates
+  exactly one payout row in the same transaction as the audit event. Reject moves no money and is never blocked by
+  flags. A partial refund pays the lower amount, but the $1,000 limit still applies to the requested amount. Claim
+  only records who is working a refund. Bulk process runs `processRefund` per refund, each with its own audit row.
+- **Feature flags** apply on the very next eligibility check: `block_refunds_unverified_kyc` (OFF),
+  `pause_refund_processing` (OFF, emergency stop), `block_high_value_refunds` (ON, blocks refunds over $1,000).
+- **Fraud Operations** works on alerts from a *simulated* monitoring system. While a hold from an escalated alert is
+  active, refunds fail with `ACCOUNT_RISK_HOLD` ("Account under risk review — refund processing paused.").
 
-Requires Node.js 20+ (developed on Node 24) and npm.
+## Security
+
+The role selector in the navbar is a **demo control, not authentication**. Roles are KYC Reviewer, Payments
+Operator and Risk Admin. The chosen role is stored in a cookie, treated as an untrusted claim and re-checked against
+`src/server/permissions.ts` on every mutation. Do not deploy this or point it at real data.
+
+## Install
+
+Requires Node.js 20+ (developed on Node 24; on the Devin VM run `source ~/.nvm/nvm.sh` first) and npm.
 
 ```bash
 npm install
-npm run demo:reset   # creates/resets the demo database data/portal.db with seed data (db:reset is an alias)
-npm run dev        # http://localhost:3000/kyc
+npm run demo:reset   # create/reset data/portal.db with seed data (db:reset is an alias)
 ```
 
-## Other commands
+## Usage
 
 ```bash
-npm run typecheck  # tsc --noEmit
-npm run lint       # eslint .
-npm test           # vitest run (in-memory SQLite, no watch)
-npm run smoke      # browser smoke test (needs `npm run dev` running and Chrome)
-npm run new:workflow -- refunds --entity refund --role payments_operator   # scaffold a new tool
+npm run dev          # http://localhost:3000/kyc
 ```
 
-Building a new tool? Devin: start with the `!build-internal-tool` playbook (source:
-[playbooks/build-internal-tool.devin.md](playbooks/build-internal-tool.devin.md)), which invokes the repo skill
-[.agents/skills/build-internal-tool/SKILL.md](.agents/skills/build-internal-tool/SKILL.md). Detailed procedure:
-[docs/playbooks/ops-portal-tool.md](docs/playbooks/ops-portal-tool.md); conventions: [AGENTS.md](AGENTS.md).
+Pick a role in the navbar and follow one of the demo walkthroughs below. Run `npm run demo:reset` to restore
+the initial state at any time.
 
-## Seed data
+## Demo data
 
 54 synthetic customers (50 KYC customers — 20 approved, 15 pending, 10 awaiting info, 5 rejected — plus 4 approved Fraud Operations customers),
-118 transactions, 29 refunds (14 processed, each with one payout) and 5 fraud alerts, fully reproducible on every `npm run demo:reset`. Demo scenarios:
+118 transactions, 29 refunds (14 processed, each with one payout) and 5 fraud alerts, fully reproducible on every `npm run demo:reset`.
 
 Each case has a review type explaining why it is in the queue: **Onboarding** (new applicant — no account
 activity until approved), **Periodic refresh** or **Triggered** (existing customer being re-reviewed — keeps their
-transaction/refund history).
+transaction/refund history). Demo scenarios:
 
 | Customer       | KYC      | Risk   | Review           | Scenario |
 | -------------- | -------- | ------ | ---------------- | -------- |
@@ -110,12 +105,41 @@ escalated). It is guarded (`src/server/demo-guard.ts`) and refuses to run when:
 
 The same guard protects the automatic reset `getDb()` performs after a `SCHEMA_VERSION` bump.
 
-## UI
+## Development
 
-Bootstrap 5 + React Bootstrap with a theme and sidebar layout adapted from the MIT-licensed
-[Dashio template](https://github.com/DashboardPack/dashio-template) (Inter font, light/dark toggle in the header).
+```bash
+npm run typecheck    # tsc --noEmit
+npm run lint         # eslint .
+npm test             # vitest run (in-memory SQLite, no watch)
+npm run smoke        # Playwright browser smoke test; needs `npm run dev` + Chrome
+                     # on the Devin VM: SMOKE_CDP_URL=http://localhost:29229 npm run smoke
+npm run new:workflow -- <slug> --entity <type> --role <role>   # scaffold a new tool
+```
 
-## More
+CI (`.github/workflows/ci.yml`) runs `npm ci`, typecheck, lint, test and `db:reset` on every PR.
 
-- [AGENTS.md](AGENTS.md) — file map, conventions, commands (for humans and agents).
-- [docs/architecture.md](docs/architecture.md) — diagram and how to add a workflow.
+Stack: Next.js 15 App Router, React 19, TypeScript, better-sqlite3 (no ORM), Zod, Vitest, and Bootstrap 5 / React
+Bootstrap with a theme adapted from the MIT-licensed [Dashio template](https://github.com/DashboardPack/dashio-template).
+
+```text
+src/app/          pages + server actions (one folder per workflow)
+src/components/   shared UI (queue, filters, case page, decision form)
+src/server/       framework-free services: rules, permissions, audited operations, schema + seed
+tests/            Vitest suites per workflow + seed invariants
+scripts/          db reset, smoke test, workflow scaffold
+```
+
+## Contributing
+
+- [AGENTS.md](AGENTS.md): file map, conventions and the agent skills table (for humans and agents).
+- [docs/architecture.md](docs/architecture.md): diagram, rules table and how to add a workflow.
+- Building a new tool with Devin: start with the `!build-internal-tool` playbook (source:
+  [playbooks/build-internal-tool.devin.md](playbooks/build-internal-tool.devin.md)). It invokes the repo skill
+  [.agents/skills/build-internal-tool/SKILL.md](.agents/skills/build-internal-tool/SKILL.md). Detailed procedure:
+  [docs/playbooks/ops-portal-tool.md](docs/playbooks/ops-portal-tool.md).
+- Before every PR: typecheck, lint, test, smoke, and the checklist in `.agents/skills/review-internal-tool`. Never
+  commit `data/*.db`.
+
+## License
+
+No license file yet: all rights reserved by the repository owner. The UI theme is derived from the MIT-licensed Dashio template.
