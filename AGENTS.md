@@ -162,6 +162,7 @@ review_type `onboarding | periodic_refresh | triggered` + review_reason + review
 
 ## Gotchas
 
+- Record pages: compute "Next" before the decision and keep it in client state (`useState(nextHref)`); a decision changes `updated_at`, which can re-sort the queue and make a recomputed Next point backwards. Render disabled prev/next as `<span>`, not `Link href="#"`.
 - React Bootstrap in **server components**: use named sub-components (`CardHeader`, `CardBody`, `ListGroupItem`)
   not dot access (`Card.Header`) — dot access on a client reference is `undefined` in RSC and 500s the page.
   Components that pass functions/elements as props (e.g. `as={Link}`, lucide icons) must be `"use client"`.
